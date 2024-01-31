@@ -47,8 +47,6 @@ def error(error_message: str) -> None:
     :param error_message: The error message
     """
 
-    global does_support_ansi_color
-
     def supports_ansi_color() -> bool:
         "Function for caching the result of check_for_ansi_colors"
 
@@ -67,11 +65,13 @@ def error(error_message: str) -> None:
             except AttributeError:
                 return False
 
+        global does_support_ansi_color
         if does_support_ansi_color is None:
             does_support_ansi_color = check_for_ansi_colors()
 
         return does_support_ansi_color
     
+    global does_support_ansi_color
     if does_support_ansi_color is None:
         print()
     
