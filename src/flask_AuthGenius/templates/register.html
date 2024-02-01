@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Create account</title>
+        <style>
+            {% if theme == "light" and not is_default_theme %}
+            :root {
+                --background: #ffffff;
+                --text: #333333;
+            }
+
+            #light-mode {
+                display: none;
+            }
+            {% if theme == "dark" and not is_default_theme %}
+            :root {
+                --background: #121212;
+                --text: #ffffff;
+            }
+
+            #dark-mode {
+                display: none;
+            }
+            {% else %}
+            :root {
+                --background: #ffffff;
+                --text: #333333;
+            }
+
+            #light-mode {
+                display: none;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #121212;
+                    --text: #ffffff;
+                }
+    
+                input, select {
+                    background-color: #333333;
+                    color: white;
+                }
+
+                #light-mode {
+                    display: block;
+                }
+
+                #dark-mode {
+                    display: none;
+                }
+            }
+            {% endif %}
+    
+            body {
+                font-family: Arial, sans-serif;
+                background-color: var(--background);
+                color: var(--text);
+                margin: 0;
+                padding: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+            }
+    
+            #register-container {
+                background-color: var(--background);
+                color: var(--text);
+                padding: 20px;
+                border-radius: 8px;
+                width: 800px;
+                text-align: center;
+            }
+    
+            h1 {
+                text-align: center;
+                margin-bottom: 0;
+            }
+    
+            .logo {
+                display: inline-block;
+                vertical-align: middle;
+                width: 40px;
+            }
+
+            label {
+                font-size: 14px;
+                display: block;
+                text-align: left;
+            }
+
+            #passwordLabel {
+                display: flex;
+            }
+    
+            h4 {
+                display: inline-block;
+                vertical-align: middle;
+                margin-left: 10px;
+                font-weight: lighter;
+            }
+    
+            #split-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-top: 20px;
+            }
+    
+            .left-section {
+                flex: 1;
+                display: none;
+            }
+    
+            #imagePreview {
+                cursor: pointer;
+                text-align: center;
+            }
+    
+            #imagePreview img {
+                max-width: 100%;
+                border-radius: 50%;
+                margin-bottom: 10px;
+            }
+
+            #profile-picture {
+                width: 200px;
+            }
+    
+            .right-section {
+                flex: 1;
+                margin-left: 20px;
+            }
+    
+            form {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+    
+            input, select {
+                padding: 10px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+            }
+    
+            button {
+                background-color: #4CAF50;
+                color: white;
+                padding: 10px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+
+            footer {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+
+            footer a {
+                color: var(--text);
+                text-decoration: none;
+            }
+
+            footer a:hover {
+                text-decoration: underline;
+            }
+    
+            @media (max-width: 768px) {
+                #split-container {
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                }
+
+                #profile-picture {
+                    width: 50px;
+                }
+                
+                .left-section,
+                .right-section {
+                    margin-left: 0;
+                    width: 400px;
+                }
+
+                .right-section {
+                    padding-top: 20px;
+                }
+
+                form {
+                    gap: 4px;
+                }
+            }
+
+            @media (max-width: 450px) {
+                .left-section,
+                .right-section {
+                    width: 300px;
+                }
+            }
+
+            @media (max-width: 325px) {
+                .left-section,
+                .right-section {
+                    width: 200px;
+                }
+            }
+        </style>
+        <script>
+            function selectProfilePicture() {
+                const form = document.getElementById('registerForm');
+
+                const fileInput = document.createElement('input');
+                fileInput.style.display = "none";
+                fileInput.type = 'file';
+                fileInput.accept = 'image/*';
+                fileInput.addEventListener('change', handleFileSelect);
+
+                form.appendChild(fileInput);
+
+                fileInput.click();
+            }
+
+            function handleFileSelect(event) {
+                const fileInput = event.target;
+                const profileImage = document.getElementById('profile-picture');
+
+                const files = fileInput.files;
+                if (files.length > 0) {
+                    profileImage.src = URL.createObjectURL(files[0]);
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+                leftSection = document.getElementById("left-section");
+                leftSection.style.display = "block";
+
+                togglePassword = document.getElementById("togglePassword");
+                passwordInput = document.getElementById("password");
+
+                togglePassword.style.display = "flex";
+
+                togglePassword.addEventListener("click", function () {
+                    passwordInput.type = (passwordInput.type === "password") ? "text" : "password";
+                });
+            });
+        </script>
+    </head>
+    <body>
+        <div id="register-container">
+            <h1>Create account</h1>
+            <img src="{{ company_logo }}" alt="{{ company_name }} Logo" class="logo"><h4>{{ company_name }}</h4>
+            <div id="split-container">
+                <div class="left-section" id="left-section">
+                    <div id="imagePreview" onclick="selectProfilePicture()">
+                        <img id="profile-picture" src="{{ profile_picture }}" alt="">
+                        <span><br>Click to change</span>
+                    </div>
+                </div>
+                <div class="right-section">
+                    <form id="registerForm" method="post" action="">
+                        <label for="usernameOrEmail">Username/Email:</label>
+                        <input type="text" id="usernameOrEmail" name="usernameOrEmail" required>
+
+                        <label id="passwordLabel" for="password">Password:&nbsp;<span id="togglePassword" style="display: none;">👁️</span></label>
+                        <input type="password" id="password" name="password" required>
+
+                        <label for="fullName">Full Name:</label>
+                        <input type="text" id="fullName" name="fullName">
+
+                        <label for="displayName">Display Name:</label>
+                        <input type="text" id="displayName" name="displayName">
+
+                        <label for="birthdate">Birthdate:</label>
+                        <input type="date" id="birthdate" name="birthdate">
+
+                        <label for="gender">Gender:</label>
+                        <select id="gender" name="gender">
+                            <option value="m">Male</option>
+                            <option value="f">Female</option>
+                            <option value="o">Other</option>
+                            <option value="p">Prefer not to say</option>
+                        </select>
+
+                        <label for="country">Country:</label>
+                        <select id="country" name="country">
+                            <option value="de">Germany</option>
+                            <option value="us">USA</option>
+                            <option value="sw">Switzerland</option>
+                            <option value="ne">Netherlands</option>
+                            <option value="ot">Other</option>
+                        </select>
+                        <input type="hidden" name="profile_picture_index" value="{{ profile_picture_index }}">
+                        <input type="hidden" name="ag_register" value="1">
+                        <button type="button">Register</button>
+                    </form>
+                    <br>
+                    <footer>
+                        <a href="?ag_login=1">Login</a>&nbsp;-&nbsp;
+                        <a href="?change_language=1">Change Language</a>&nbsp;-&nbsp;
+                        <span id="dark-mode"><a href="?theme=dark">Dark Mode</a>&nbsp;-&nbsp;</span>
+                        <span id="light-mode"><a href="?theme=light">Light Mode</a>&nbsp;-&nbsp;</span>
+                        <a href="https://github.com/tn3w/flask_AuthGenius/blob/master/Privacy.md" target="_blank">🔐 Privacy</a>
+                    </footer>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

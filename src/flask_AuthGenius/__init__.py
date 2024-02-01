@@ -1,6 +1,6 @@
 import pkg_resources
 import os
-from typing import Optional
+from typing import Optional, Tuple
 from flask import Flask, g, request
 from .utils import JSON, error, convert_image_to_base64, generate_website_logo, is_current_route,\
                    get_client_ip, get_ip_info
@@ -16,7 +16,7 @@ LANGUAGE_CODES = [language["code"] for language in LANGUAGES]
 
 GENERATED_LOGO_PATH = os.path.join(DATA_DIR, "generated-logo.txt")
 
-class flask_AuthGenius:
+class AuthGenius:
     "Shows the user a login prompt on certain routes"
 
     def __init__(
@@ -49,7 +49,7 @@ class flask_AuthGenius:
             else:
                 with open(GENERATED_LOGO_PATH, "r", encoding = "utf-8") as readable_file:
                     website_logo = readable_file.read()
-
+        
         self.website_logo = website_logo
         self.authentication_routes = authentication_routes if isinstance(authentication_routes, list) else []
         self.popup_routes = popup_routes if isinstance(popup_routes, list) else []
@@ -85,8 +85,13 @@ class flask_AuthGenius:
         return False
     
     @property
-    def _client_language(self) -> bool:
-        "Which language the client prefers"
+    def _client_language(self) -> Tuple[str, bool]:
+        """
+        Which language the client prefers
+
+        :return language: The client languge
+        :return is_default: Is Default Value
+        """
 
         language_from_args = request.args.get("language")
         language_from_cookies = request.cookies.get("language")
@@ -105,13 +110,20 @@ class flask_AuthGenius:
             preferred_language = request.accept_languages.best_match(LANGUAGE_CODES)
 
             if preferred_language != None:
-                return preferred_language
+                return preferred_language, False
+        else:
+            return chosen_language, False
 
-        return "en"
+        return "en", True
     
     @property
-    def _client_theme(self) -> bool:
-        "Which color theme the user prefers"
+    def _client_theme(self) -> Tuple[str, bool]:
+        """
+        Which color theme the user prefers
+        
+        :return theme: The client theme
+        :return is_default: Is default Value
+        """
 
         THEMES = ["light", "dark"]
 
@@ -124,11 +136,14 @@ class flask_AuthGenius:
             else (
                 theme_from_cookies
                 if theme_from_cookies in THEMES
-                else "light"
+                else None
             )
         )
 
-        return theme
+        if theme is None:
+            return "light", True
+
+        return theme, False
     
     def _set_client_information(self) -> None:
         "Sets the client information for certain requests"
