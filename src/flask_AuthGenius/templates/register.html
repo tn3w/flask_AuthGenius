@@ -4,8 +4,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Create account</title>
-        <style>
-            {% if theme == "light" and not is_default_theme %}
+        <style>{% if theme == "light" and not is_default_theme %}
             :root {
                 --background: #ffffff;
                 --text: #333333;
@@ -14,7 +13,7 @@
             #light-mode {
                 display: none;
             }
-            {% if theme == "dark" and not is_default_theme %}
+            {% elif theme == "dark" and not is_default_theme %}
             :root {
                 --background: #121212;
                 --text: #ffffff;
@@ -53,6 +52,15 @@
                 }
             }
             {% endif %}
+
+            @keyframes rotate {
+                from {
+                    transform: rotate(360deg);
+                }
+                to {
+                    transform: rotate(0deg);
+                }
+            }
     
             body {
                 font-family: Arial, sans-serif;
@@ -92,7 +100,7 @@
                 text-align: left;
             }
 
-            #passwordLabel {
+            #passwordLabel, #passwordRepeatLabel {
                 display: flex;
             }
     
@@ -125,6 +133,20 @@
                 border-radius: 50%;
                 margin-bottom: 10px;
             }
+            
+            #buttonImage {
+                display: none;
+                animation: rotate 1s linear infinite;
+            }
+
+            #editUsername, #editEmail {
+                display: none;
+            }
+
+            #editUsername:hover, #editEmail:hover {
+                cursor: pointer;
+                text-decoration: underline;
+            }
 
             #profile-picture {
                 width: 200px;
@@ -154,6 +176,8 @@
                 border: none;
                 border-radius: 5px;
                 cursor: pointer;
+                display: flex;
+                justify-content: center;
             }
 
             footer {
@@ -248,6 +272,77 @@
                 togglePassword.addEventListener("click", function () {
                     passwordInput.type = (passwordInput.type === "password") ? "text" : "password";
                 });
+
+                togglePasswordRepeat = document.getElementById("togglePasswordRepeat");
+                passwordInputRepeat = document.getElementById("passwordRepeat");
+
+                togglePasswordRepeat.style.display = "flex";
+
+                togglePasswordRepeat.addEventListener("click", function () {
+                    passwordInputRepeat.type = (passwordInputRepeat.type === "password") ? "text" : "password";
+                });
+
+                registerForm = document.getElementById("registerForm");
+                registerForm.addEventListener('submit', function (event) {
+                    buttonImage = document.getElementById("buttonImage");
+                    buttonImage.style.display = "block";
+                    
+                    buttonText = document.getElementById("buttonText");
+                    buttonText.innerHTML = "Loading ...";
+                });
+
+                {% if "username" in fields and username|default %}
+                var editUsername = document.getElementById("editUsername");
+                var editUsernameText = document.getElementById("editUsernameText");
+                var editUsernameBox = document.getElementById("editUsernameBox");
+                
+                editUsername.style.display = "block";
+                editUsername.addEventListener('click', function () {
+                    var label = document.createElement('label');
+                    label.textContent = "Username:";
+                    label.setAttribute('for', 'username');
+
+                    var input = document.createElement('input');
+                    input.type = "text";
+                    var username = editUsernameText.textContent.trim();
+                    input.value = username;
+                    input.name = "username";
+                    input.id = "username";
+                    input.placeholder = "@licia_t3";
+                    input.required = true;
+
+                    registerForm.insertBefore(label, registerForm.firstChild);
+                    registerForm.insertBefore(input, registerForm.firstChild);
+
+                    editUsernameBox.remove();
+                });
+                {% endif %}
+                {% if "email" in fields and email|default %}
+                var editEmail = document.getElementById("editEmail");
+                var editEmailText = document.getElementById("editEmailText");
+                var editEmailBox = document.getElementById("editEmailBox");
+                
+                editEmail.style.display = "block";
+                editEmail.addEventListener('click', function () {
+                    var label = document.createElement('label');
+                    label.textContent = "Email:";
+                    label.setAttribute('for', 'email');
+
+                    var input = document.createElement('input');
+                    input.type = "email";
+                    var email = editEmailText.textContent.trim();
+                    input.value = email;
+                    input.name = "email";
+                    input.id = "email";
+                    input.placeholder = "email@example.com";
+                    input.required = true;
+
+                    registerForm.insertBefore(label, registerForm.firstChild);
+                    registerForm.insertBefore(input, registerForm.firstChild);
+
+                    editEmailBox.remove();
+                });
+                {% endif %}
             });
         </script>
     </head>
@@ -264,40 +359,69 @@
                 </div>
                 <div class="right-section">
                     <form id="registerForm" method="post" action="">
-                        <label for="usernameOrEmail">Username/Email:</label>
-                        <input type="text" id="usernameOrEmail" name="usernameOrEmail" required>
-
+                        {% if "username" in fields %}
+                            {% if username|default %}
+                            <span id="editUsernameBox">
+                                <p>Selected username: <span id="editUsernameText">{{ username }}</span>&nbsp;<span id="editUsername">Edit</span></p>
+                                <input type="hidden" name="username" value="{{ username }}">
+                            </span>
+                            {% else %}
+                            <label for="username">Username:</label>
+                            <input type="text" id="username" name="username"{% if "username" in required_fields %} required{% endif %}>
+                            {% endif %}
+                        {% endif %}
+                        {% if "email" in fields %}
+                            {% if email|default %}
+                            <span id="editEmailBox">
+                                <p>Selected email: <span id="editEmailText">{{ email }}</span>&nbsp;<span id="editEmail">Edit</span></p>
+                                <input type="hidden" name="email" value="{{ email }}">
+                            </span>
+                            {% else %}
+                            <label for="email">Email:</label>
+                            <input type="email" id="email" name="email"{% if "email" in required_fields %} required{% endif %}>
+                            {% endif %}
+                        {% endif %}
                         <label id="passwordLabel" for="password">Password:&nbsp;<span id="togglePassword" style="display: none;">👁️</span></label>
-                        <input type="password" id="password" name="password" required>
-
-                        <label for="fullName">Full Name:</label>
-                        <input type="text" id="fullName" name="fullName">
-
-                        <label for="displayName">Display Name:</label>
-                        <input type="text" id="displayName" name="displayName">
-
-                        <label for="birthdate">Birthdate:</label>
-                        <input type="date" id="birthdate" name="birthdate">
-
-                        <label for="gender">Gender:</label>
-                        <select id="gender" name="gender">
-                            <option value="m">Male</option>
-                            <option value="f">Female</option>
-                            <option value="o">Other</option>
-                            <option value="p">Prefer not to say</option>
-                        </select>
-
-                        <label for="country">Country:</label>
-                        <select id="country" name="country">
-                            <option value="de">Germany</option>
-                            <option value="us">USA</option>
-                            <option value="sw">Switzerland</option>
-                            <option value="ne">Netherlands</option>
-                            <option value="ot">Other</option>
-                        </select>
+                        <input type="password" id="password" name="password" placeholder="********" required>
+                        <label id="passwordRepeatLabel" for="passwordRepeat">Repeat Password:&nbsp;<span id="togglePasswordRepeat" style="display: none;">👁️</span></label>
+                        <input type="password" id="passwordRepeat" name="passwordRepeat" placeholder="********" required>
+                        {% if "full_name" in fields %}
+                            <label for="fullName">Full Name:</label>
+                            <input type="text" id="fullName" name="fullName"{% if "full_name" in required_fields %} required{% endif %}>
+                        {% elif %}
+                        {% if "display_name" in fields %}
+                            <label for="displayName">Display Name:</label>
+                            <input type="text" id="displayName" name="displayName"{% if "display_name" in required_fields %} required{% endif %}>
+                        {% elif %}
+                        {% if "birthdate" in fields %}
+                            <label for="birthdate">Birthdate:</label>
+                            <input type="date" id="birthdate" name="birthdate"{% if "birthdate" in required_fields %} required{% endif %}>
+                        {% elif %}
+                        {% if "gender" in fields %}
+                            <label for="gender">Gender:</label>
+                            <select id="gender" name="gender">
+                                <option value="m">Male</option>
+                                <option value="f">Female</option>
+                                <option value="o">Other</option>
+                                {% if not "gender" in required_fields %}
+                                <option value="p">Prefer not to say</option>
+                                {% endif %}
+                            </select>
+                        {% elif %}
+                        {% if "country" in fields %}
+                            <label for="country">Country:</label>
+                            <select id="country" name="country">
+                                {% for country in countrys %}
+                                <option value="{{ country["code"] }}">{{ country["name"] }}</option>
+                                {% endfor %}
+                            </select>
+                        {% elif %}
                         <input type="hidden" name="profile_picture_index" value="{{ profile_picture_index }}">
                         <input type="hidden" name="ag_register" value="1">
-                        <button type="button">Register</button>
+                        <button type="submit" form="registerForm">
+                            <img id="buttonImage" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAOxAAADsQBlSsOGwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADkSURBVDiNtZJBSgNBFERfJcFoFFwIbsSFIEF0JejKO7jWY+ktPJEgEheeQNAoQnxuOjgZkxlnYUEzdP1f1fW7Bxqg3qo3TT2DpiIwbqnTa2uoQz1RL/5q8FnWXHwKXAG7cy4tp40Bkjyox8A1cA/cJZl1jX6mXqr9TsI2pDhWR5klcUWKbeCcn7t76fwK/w91Q11bwu+o+3W+V2vaBLaAftkP1WEpj4Aj9bCqGVTEo9I0TfJe6L3ynSR5LmYH6leSyYJBSfOWZFrhFn60JI/qDFj/lSDJa32+ZUjytHSEFfhoM/wGWj1hK6xe71YAAAAASUVORK5CYII=">
+                            &nbsp;<span id="buttonText">Register</span>
+                        </button>
                     </form>
                     <br>
                     <footer>

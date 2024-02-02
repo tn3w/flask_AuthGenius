@@ -58,6 +58,12 @@ class AuthGenius:
     def _need_authentication(self) -> bool:
         "Whether authorization is required on the current route"
 
+        if request.args.get("ag_login", "0") == "1"\
+            or request.args.get("ag_register", "0") == "1"\
+                or (request.method.upper() == "POST"\
+                    and (request.form.get("ag_login") == "1" or request.form.get("ag_register") == "1")):
+            return True
+
         for route in self.authentication_routes:
             if is_current_route(route):
                 return True
