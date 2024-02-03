@@ -5,10 +5,11 @@ if __name__ == "__main__":
 
 import pkg_resources
 import os
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 from base64 import b64encode, b64decode
 import mimetypes
 import random
+import imghdr
 from io import BytesIO
 from urllib.parse import urlparse
 import threading
@@ -17,7 +18,7 @@ import re
 import secrets
 import hashlib
 from time import time
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from flask import request
 import ipaddress
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -25,9 +26,11 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import requests
+import magic
 
 DATA_DIR = pkg_resources.resource_filename('flask_AuthGenius', 'data')
 ASSETS_DIR = pkg_resources.resource_filename('flask_AuthGenius', 'assets')
+PROFILE_PICTURES_PATH = os.path.join(ASSETS_DIR, "profile_pictures.json")
 FONTS = [
     os.path.join(ASSETS_DIR, "Comic_Sans_MS.ttf"),
     os.path.join(ASSETS_DIR, "Droid_Sans_Mono.ttf"),
@@ -37,6 +40,7 @@ FONTS = [
 USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.3", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.3", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.1"]
 IP_API_CACHE_PATH = os.path.join(DATA_DIR, "ipapi-cache.json")
 IP_INFO_KEYS = ['continent', 'continentCode', 'country', 'countryCode', 'region', 'regionName', 'city', 'district', 'zip', 'lat', 'lon', 'timezone', 'offset', 'currency', 'isp', 'org', 'as', 'asname', 'reverse', 'mobile', 'proxy', 'hosting', 'time']
+USERS_PATH = os.path.join(DATA_DIR, "users.json")
 
 does_support_ansi_color = None
 
@@ -135,6 +139,37 @@ def generate_website_logo(name: str) -> str:
 
     image_base64 = b64encode(image_buffer.getvalue()).decode("utf-8")
     return "data:image/png;base64," + image_base64
+
+def generate_random_profile_picture() -> Tuple[str, int]:
+    "Generates a random profile picture and its index by loading a list of profile pictures"
+
+    profile_pictures = JSON.load(PROFILE_PICTURES_PATH)
+
+    random_profile_picture = random.choice(profile_pictures)
+    random_pp_index = profile_pictures.index(random_profile_picture)
+
+    return random_profile_picture, random_pp_index
+
+def generate_random_string(length: int, with_punctuation: bool = True,
+                           with_letters: bool = True) -> str:
+    """
+    Generates a random string
+
+    :param length: The length of the string
+    :param with_punctuation: Whether to include special characters
+    :param with_letters: Whether letters should be included
+    """
+
+    characters = "0123456789"
+
+    if with_punctuation:
+        characters += r"!\"#$%&'()*+,-.:;<=>?@[\]^_`{|}~"
+
+    if with_letters:
+        characters += "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    random_string = ''.join(secrets.choice(characters) for _ in range(length))
+    return random_string
 
 def is_current_route(path: str):
     """
@@ -306,6 +341,74 @@ def get_ip_info(ip_address: str) -> dict:
     error("ip-api.com could not be requested or did not provide a correct answer")
     return None
 
+def derive_password(
+        password: str, salt: Optional[bytes] = None
+        ) -> Tuple[str, bytes]:
+    """
+    Derives a secure password hash using PBKDF2-HMAC algorithm.
+
+    :param password: The input password to be hashed.
+    :param salt: (Optional) A random byte string used as a salt. If not provided, a 32-byte random salt will be generated.
+    """
+
+    if salt is None:
+        salt = secrets.token_bytes(32)
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        iterations=100000,
+        salt=salt,
+        length=48
+    )
+
+    key = kdf.derive(password.encode())
+    hashed_password = b64encode(key).decode('utf-8')
+
+    return hashed_password, salt
+
+def is_valid_image(image_data: bytes) -> bool:
+    """
+    Checks the validity of the given image data.
+
+    :param image_data: Bytes representing the image.
+    """
+    
+    try:
+        image_format = imghdr.what(None, h=image_data)
+        if not image_format:
+            return False
+
+        mime = magic.Magic()
+        image_type = mime.from_buffer(image_data)
+
+        allowed_types = ["image/jpeg", "image/png", "image/webp"]
+
+        if image_type not in allowed_types:
+            return False
+
+        return True
+    except:
+        return False
+
+def resize_image(image_data: bytes, target_size: tuple = (100, 100)) -> Optional[bytes]:
+    """
+    Resizes the given image data to the specified target size.
+
+    :param image_data: Bytes representing the image.
+    :param target_size: Tuple representing the target size (width, height).
+    """
+
+    try:
+        image = Image.open(BytesIO(image_data))
+        resized_image = ImageOps.fit(image, target_size, method=0, bleed=0.0, centering=(0.5, 0.5))
+
+        bytes_io = BytesIO()
+        resized_image.save(bytes_io, format='WEBP', quality=85)
+
+        return bytes_io.getvalue()
+    except:
+        return None
+
 file_locks = dict()
 
 class JSON:
@@ -362,20 +465,20 @@ class FastHashing:
 
         self.salt = salt
 
-    def hash(self, plain_text: str, hash_length: int = 8) -> str:
+    def hash(self, plain_text: str, salt_length: int = 8) -> str:
         """
         Function to hash a plaintext
 
         :param plain_text: The text to be hashed
-        :param hash_length: The length of the returned hashed value
+        :param salt_length: The length of the salt
         """
 
         salt = self.salt
         if salt is None:
-            salt = secrets.token_hex(hash_length)
+            salt = secrets.token_hex(salt_length)
         plain_text = salt + plain_text
 
-        hash_object = hashlib.sha256(plain_text.encode())
+        hash_object = hashlib.sha512(plain_text.encode())
         hex_dig = hash_object.hexdigest()
 
         return hex_dig + "//" + salt
@@ -392,11 +495,90 @@ class FastHashing:
         if "//" in hash:
             hash, salt = hash.split("//")
 
-        hash_length = len(hash)
+        salt_length = len(salt)
 
-        comparison_hash = FastHashing(salt=salt).hash(plain_text, hash_length = hash_length).split("//")[0]
+        comparison_hash = FastHashing(salt=salt).hash(plain_text, salt_length = salt_length).split("//")[0]
 
         return comparison_hash == hash
+
+class Hashing:
+    "Implementation of secure hashing with SHA256 and 200000 iterations"
+
+    def __init__(self, salt: Optional[str] = None, without_salt: bool = False):
+        """
+        :param salt: The salt, makes the hashing process more secure (Optional)
+        :param without_salt: If True, no salt is added to the hash
+        """
+
+        self.salt = salt
+        self.without_salt = without_salt
+
+    def hash(self, plain_text: str, hash_length: int = 32) -> str:
+        """
+        Function to hash a plaintext
+
+        :param plain_text: The text to be hashed
+        :param hash_length: The length of the returned hashed value
+        """
+
+        plain_text = str(plain_text).encode('utf-8')
+
+        if not self.without_salt:
+            salt = self.salt
+            if salt is None:
+                salt = secrets.token_bytes(32)
+            else:
+                if not isinstance(salt, bytes):
+                    try:
+                        salt = bytes.fromhex(salt)
+                    except:
+                        salt = salt.encode('utf-8')
+        else:
+            salt = None
+
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=hash_length,
+            salt=salt,
+            iterations=200000,
+            backend=default_backend()
+        )
+
+        hashed_data = kdf.derive(plain_text)
+
+        if not self.without_salt:
+            hashed_value = b64encode(hashed_data).decode('utf-8') + "//" + salt.hex()
+        else:
+            hashed_value = b64encode(hashed_data).decode('utf-8')
+
+        return hashed_value
+
+    def compare(self, plain_text: str, hashed_value: str) -> bool:
+        """
+        Compares a plaintext with a hashed value
+
+        :param plain_text: The text that was hashed
+        :param hashed_value: The hashed value
+        """
+
+        if not self.without_salt:
+            salt = self.salt
+            if "//" in hashed_value:
+                hashed_value, salt = hashed_value.split("//")
+
+            if salt is None:
+                raise ValueError("Salt cannot be None if there is no salt in hash")
+
+            salt = bytes.fromhex(salt)
+        else:
+            salt = None
+
+        hash_length = len(b64decode(hashed_value))
+
+        comparison_hash = Hashing(salt=salt, without_salt = self.without_salt)\
+            .hash(plain_text, hash_length = hash_length).split("//")[0]
+
+        return comparison_hash == hashed_value
 
 class SymmetricCrypto:
     """
@@ -470,3 +652,146 @@ class SymmetricCrypto:
         plaintext = unpadder.update(decrypted_data) + unpadder.finalize()
 
         return plaintext.decode()
+
+class NoEncryption:
+    """
+    A class that provides a no-operation (dummy) implementation for encryption and decryption.
+    """
+
+    def __init__(self):
+        pass
+    
+    def encrypt(self = None, plain_text: str = "Dummy") -> str:
+        "Dummy encryption method that returns the input plain text unchanged"
+        return plain_text
+    
+    def decrypt(self = None, cipher_text: str = "Dummy") -> str:
+        "Dummy decryption method that returns the input cipher text unchanged."
+        return cipher_text
+
+class User:
+
+    @staticmethod
+    def create(
+        password: str, username: Optional[str] = None,
+        email: Optional[str] = None, full_name: Optional[str] = None,
+        display_name: Optional[str] = None, birthdate: Optional[str] = None,
+        gender: Optional[str] = None, country: Optional[str] = None,
+        profile_picture: Optional[bytes] = None, profile_picture_index: Optional[int] = None,
+        language: Optional[str] = None, theme: Optional[str] = None,
+        ip_address: Optional[str] = None, user_agent: Optional[str] = None,
+        encrypted_fields: Optional[list] = None, hashed_fieds: Optional[list] = None) -> dict:
+        """
+        Creates a new user with the provided information.
+
+        :param password: The password for the user account. Must be a string.
+        :param username: (Optional) The desired username for the user account. If not provided, it defaults to None.
+        :param email: (Optional) The email address associated with the user account. If not provided, it defaults to None.
+        :param full_name: (Optional) The full name of the user. If not provided, it defaults to None.
+        :param display_name: (Optional) The display name for the user. If not provided, it defaults to None.
+        :param birthdate: (Optional) The birthdate of the user. If not provided, it defaults to None.
+        :param gender: (Optional) The gender of the user. If not provided, it defaults to None.
+        :param country: (Optional) The country of residence for the user. If not provided, it defaults to None.
+        :param profile_picture: (Optional) A binary representation of the user's profile picture. If not provided, it defaults to None.
+        :param profile_picture_index: (Optional) An index representing the profile picture chosen by the user. If not provided, it defaults to None.
+        :param language: (Optional) The preferred language for the user interface. If not provided, it defaults to None.
+        :param theme: (Optional) The preferred theme for the user interface. If not provided, it defaults to None.
+        :param ip_address: (Optional) The IP address from which the user is creating the account. If not provided, it defaults to None.
+        :param user_agent: (Optional) The user agent information of the browser or client used by the user. If not provided, it defaults to None.
+        :param encrypted_fields: All fields that are to be saved in encrypted form
+        :param hashed_fieds: All fields that are to be saved in hashed form
+
+        :return: A dictionary containing the user information.
+        """
+
+        user = {"sessions": {}}
+
+        sc = NoEncryption()
+        derived_password = None
+        if encrypted_fields is not None:
+            derived_password, salt = derive_password(password)
+            salt = b64encode(salt).decode('utf-8')
+
+            user["enc_salt"] = salt
+
+            sc = SymmetricCrypto(derived_password)
+        else:
+            encrypted_fields = []
+        
+        if display_name != None: user["displayname"] = display_name
+        if hashed_fieds is None: hashed_fieds = []
+
+        hashing_params = {"username": username, "email": email}
+        for name, value in hashing_params.items():
+            if value is None: continue
+            if name in hashed_fieds:
+                value = FastHashing().hash(value)
+            user[name] = value
+
+        encrypted_params = {
+            "fullname": full_name, "birthdate": birthdate, 
+            "gender": gender, "country": country, "language": language, "theme": theme
+        }
+        for name, value in encrypted_params.items():
+            if value is None: continue
+            if name in encrypted_fields:
+                value = sc.encrypt(value)
+            user[name] = value
+        
+        if not (profile_picture is None and profile_picture_index is None):
+            if profile_picture is None:
+                profile_picture = str(profile_picture_index)
+            else:
+                if is_valid_image(profile_picture):
+                    profile_picture = resize_image(profile_picture)
+                    if profile_picture is not None:
+                        profile_picture = 'data:image/webp;base64,' + b64encode(profile_picture).decode('utf-8')
+                else:
+                    profile_picture = None
+
+                if profile_picture is None:
+                    _, random_pp_index = generate_random_profile_picture()
+                    profile_picture = str(random_pp_index)
+        
+        session_id = generate_random_string(6, with_punctuation=False)
+        session_token = generate_random_string(24)
+        session_token_hash = Hashing().hash(session_token)
+
+        session = {"hash": session_token_hash}
+
+        session_encrypted_params = {"ip": ip_address, "ua": user_agent}
+        for name, value in session_encrypted_params.items():
+            if value is None: continue
+            session[name] = value
+
+        user["session"][session_id] = session
+        
+        users = JSON.load(USERS_PATH)
+
+        while True:
+            user_id = generate_random_string(12, with_punctuation=False)
+
+            is_used = False
+            for hashed_user_id, _ in users.items():
+                if "id" in hashed_fieds:
+                    comparison = Hashing().compare(user_id, hashed_user_id)
+                    if comparison:
+                        is_used = True
+                        break
+                else:
+                    if hashed_user_id == user_id:
+                        is_used = True
+                        break
+
+            if is_used: continue
+            break
+
+        if "id" in hashed_fieds:
+            user_id = FastHashing().hash(user_id)
+        
+        users = JSON.load(USERS_PATH)
+        users[user_id] = user
+
+        JSON.dump(users, USERS_PATH)
+
+        return user_id, session_id, session_token, derived_password

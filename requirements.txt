@@ -3,3 +3,4 @@ flask
 ipaddress
 cryptography
 requests
+magic
