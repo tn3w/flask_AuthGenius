@@ -317,7 +317,7 @@
                     <h1>{{ website_name }}</h1>
                 </a>
                 <h1 class="title">Log in,</h1>
-                <p id="errorMessage" class="subtitle" {% if response['error']|default %}style="color:red;"{%endif%}>{% if response['error']|default %}{{ response['error'] }}{% else %}{{ signature }}{% endif %}</p>
+                <p id="errorMessage" class="subtitle"{% if response['error']|default %} style="color:red;"{%endif%}>{% if response['error']|default %}{{ response['error'] }}{% else %}{{ signature }}{% endif %}</p>
                 <form id="loginForm" action="/login" method="post">
                     <input name="name" type="text" id="nameInput"{% if 'name' in response['error_fields'] %} class="error"{% endif %} placeholder="Email / Account Name"{% if name|default %} value="{{ name }}"{% endif %} required>
                     <div class="password-container">
@@ -341,6 +341,7 @@
                         <span class="checkmark"></span><p>Stay logged in</p>
                         <p class="subtitle checkbox-subtitle">Only recommended on trusted devices.</p>
                     </label>
+                    <input type="hidden" name="return" value="{{ return_url }}">
                     <button type="submit">Log in now</button>
                 </form>
                 <p class="subtitle subtitle-register">No account yet? <a href="/register/pwdreset{{ only_args }}">Create account</a></p>
@@ -372,7 +373,7 @@
             event.stopPropagation();
         }
 
-        let pointerElements = [];
+        let pointerElements2fa = [];
 
         function toggleLoaderAnimation(preferredEvent){
             const loader = document.getElementById('loader');
@@ -412,8 +413,8 @@
                         const computedStyle = window.getComputedStyle(element);
                         if (computedStyle.getPropertyValue('cursor') === 'pointer') {
                             element.style.cursor = 'default';
-                            if (!(pointerElements.includes(element))){
-                                pointerElements.push(element);
+                            if (!(pointerElements2fa.includes(element))){
+                                pointerElements2fa.push(element);
                             }
                         }
                     });
@@ -445,7 +446,7 @@
                         link.style.pointerEvents = 'auto';
                     });
 
-                    pointerElements.forEach(element => {
+                    pointerElements2fa.forEach(element => {
                         element.style.cursor = 'pointer';
                     });
                 }
@@ -480,6 +481,14 @@
             }
         }
 
+        function setCookie(cookieName, cookieValue, expirationDays) {
+            const d = new Date();
+            d.setTime(d.getTime() + (expirationDays * 24 * 60 * 60 * 1000));
+            const expires = "expires=" + d.toUTCString();
+
+            document.cookie = cookieName + "=" + cookieValue + ";" + expires + ";path=/";
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const togglePassword = document.getElementById('tooglePassword');
             const loginForm = document.getElementById('loginForm');
@@ -496,12 +505,14 @@
                 const stayInput = loginForm.querySelector('input[name="stay"]');
                 const captchaInput = loginForm.querySelector('input[name="captcha_code"]');
                 const captchaSecretInput = loginForm.querySelector('input[name="captcha_secret"]');
+                const returnInput = loginForm.querySelector('input[name="return"]');
 
                 const name = nameInput.value;
                 const password = passwordInput.value;
                 const captcha_code = captchaInput.value;
                 const captcha_secret = captchaSecretInput.value;
                 const stay = stayInput.checked ? stayInput.value : '0';
+                const returnPath = returnInput.value;
 
                 captchaInput.value = '';
 
@@ -517,7 +528,8 @@
                         password: password,
                         captcha_code: captcha_code,
                         captcha_secret: captcha_secret,
-                        stay: stay
+                        stay: stay,
+                        return: returnPath
                     })
                 })
                 .then(response => {
@@ -647,10 +659,21 @@
 
                     toggleLoaderAnimation('disable');
 
-                    document.open();
-                    document.write(data['content']['new_html']);
-                    document.close();
-                    return
+                    if (data['content'].hasOwnProperty('new_html')) {
+                        document.open();
+                        document.write(data['content']['new_html']);
+                        document.close();
+                    }
+
+                    if (data['content'].hasOwnProperty('session')) {
+                        if (data['content']['stay'] == '1') {
+                            setCookie('Session', data['content']['session'], 365);
+                        }
+                    }
+
+                    if (data['content'].hasOwnProperty('redirection_url')) {
+                        window.location.href = data['content']['redirection_url'];
+                    }
                 })
                 .catch(error => {
                     displayError(error, []);
