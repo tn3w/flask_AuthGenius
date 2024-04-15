@@ -6,10 +6,17 @@ from typing import Optional, Tuple
 from flask import Flask, g, request, redirect, make_response, abort
 from .utils import JSON, error, convert_image_to_base64, generate_website_logo, is_current_route,\
                    get_client_ip, get_ip_info, render_template, get_random_item, get_url_from_request,\
-                   remove_args_from_url, Captcha, generate_random_string, WebPage, SymmetricData
+                   remove_args_from_url, Captcha, generate_random_string, WebPage, SymmetricData, TOTP
 
-DATA_DIR = os.path.join(pkg_resources.resource_filename('flask_AuthGenius', ''), 'data')
-ASSETS_DIR = pkg_resources.resource_filename('flask_AuthGenius', 'assets')
+
+try:
+    CURRENT_DIR_PATH = pkg_resources.resource_filename('flask_AuthGenius', '')
+except ModuleNotFoundError:
+    CURRENT_DIR_PATH = os.path.dirname(os.path.abspath(__file__))
+
+
+DATA_DIR = os.path.join(CURRENT_DIR_PATH, 'data')
+ASSETS_DIR = os.path.join(CURRENT_DIR_PATH, 'assets')
 
 if not os.path.isdir(DATA_DIR):
     os.mkdir(DATA_DIR)
@@ -71,6 +78,7 @@ class AuthGenius:
         self.app = app
         self.website_name = website_name
         self.use_captchas = use_captchas
+        self.totp = TOTP()
         self.enc = SymmetricData(generate_random_string(30))
 
         if use_captchas:
@@ -274,9 +282,9 @@ class AuthGenius:
                     response['content']['captcha_secret'] = captcha_secret
                     return response
 
-            # testcreds: 124421
-            # FIXME: Proper totp system
-            if totp != '124421':
+            # testcreds: LDGOZS4ZCXUJ2AMORLD66FN3PVA4T3SV
+            # FIXME: Get the secret somewhere
+            if not self.totp.verify(totp, 'LDGOZS4ZCXUJ2AMORLD66FN3PVA4T3SV'):
                 failed_times = self.failed_accounts.get(account_id, [])
                 failed_times.append(time())
                 self.failed_accounts[account_id] = failed_times
@@ -458,6 +466,19 @@ class AuthGenius:
                 dec_data['return'] + special_char + 'session=yeah!'
             return response
 
+        @app.route('/login/tmp_api', methods = ['POST'])
+        def template_api():
+            response = {"error": None, "error_fields": [], "content": {}}
+
+            if not request.is_json:
+                return abort(400)
+
+            template = request.args.get('template', 'login.html')
+            args = dict(request.args)
+            print(args)
+            print(template)
+            return template
+
     @property
     def _need_authentication(self) -> bool:
         "Whether authorization is required on the current route"
@@ -474,7 +495,7 @@ class AuthGenius:
             return True
 
         for route in self.authentication_routes:
-            if is_current_route(route):
+            if is_current_route(request, route):
                 return True
         return False
 
@@ -486,7 +507,7 @@ class AuthGenius:
             return False
 
         for route in self.popup_routes:
-            if is_current_route(route):
+            if is_current_route(request, route):
                 return True
         return False
 
@@ -561,7 +582,7 @@ class AuthGenius:
     def _set_client_information(self) -> None:
         "Sets the client information for certain requests"
 
-        client_ip = get_client_ip()
+        client_ip = get_client_ip(request)
         client_user_agent = request.user_agent.string
 
         client_ip_info = None

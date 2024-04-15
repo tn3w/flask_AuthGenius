@@ -38,13 +38,18 @@ import qrcode
 if __name__ == "__main__":
     sys.exit(2)
 
-DATA_DIR = os.path.join(pkg_resources.resource_filename('flask_AuthGenius', ''), 'data')
+try:
+    CURRENT_DIR_PATH = pkg_resources.resource_filename('flask_AuthGenius', '')
+except ModuleNotFoundError:
+    CURRENT_DIR_PATH = os.path.dirname(os.path.abspath(__file__))
+
+DATA_DIR = os.path.join(CURRENT_DIR_PATH, 'data')
 
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR, exist_ok = True)
 
-ASSETS_DIR = pkg_resources.resource_filename('flask_AuthGenius', 'assets')
-TEMPLATE_DIR_PATH = pkg_resources.resource_filename('flask_AuthGenius', 'templates')
+ASSETS_DIR = os.path.join(CURRENT_DIR_PATH, 'assets')
+TEMPLATE_DIR_PATH = os.path.join(CURRENT_DIR_PATH, 'templates')
 PROFILE_PICTURES_PATH = os.path.join(ASSETS_DIR, "profile_pictures.json")
 FONTS = [
     os.path.join(ASSETS_DIR, "Comic_Sans_MS.ttf"),
@@ -273,7 +278,7 @@ def generate_random_string(length: int, with_punctuation: bool = True,
     return random_string
 
 
-def is_current_route(path: str):
+def is_current_route(request: Request, path: str):
     """
     Helper function to determine if the provided path matches the current route or endpoint.
 
@@ -386,7 +391,7 @@ def get_client_ip(request: Request) -> Optional[str]:
 
     try:
         client_ip = request.headers.getlist("X-Forwarded-For")[0].rpartition(' ')[-1]
-    except KeyError:
+    except (KeyError, IndexError):
         pass
     else:
         if is_valid_ip(client_ip):
@@ -614,7 +619,7 @@ class Hashing:
     """
 
     def __init__(self, salt: Optional[str] = None,
-                 without_salt: bool = False, iterations: int = 1000,
+                 without_salt: bool = False, iterations: int = 10000,
                  urlsafe: bool = False):
         """
         :param salt: The salt value to be used for hashing.
@@ -643,7 +648,7 @@ class Hashing:
         if not self.without_salt:
             salt = self.salt
             if salt is None:
-                salt = secrets.token_bytes(32)
+                salt = secrets.token_bytes(16)
             else:
                 if not isinstance(salt, bytes):
                     try:
@@ -1467,11 +1472,11 @@ class User:
 
             user["enc_salt"] = salt
 
-            sc = SymmetricCrypto(derived_password)
+            sc = SymmetricEncryption(derived_password)
         else:
             encrypted_fields = []
 
-        if display_name != None:
+        if display_name is not None:
             user["displayname"] = display_name
         if hashed_fieds is None:
             hashed_fieds = []
@@ -1482,7 +1487,7 @@ class User:
                 continue
 
             if name in hashed_fieds:
-                value = FastHashing().hash(value)
+                value = Hashing().hash(value)
             user[name] = value
 
         encrypted_params = {
@@ -1521,7 +1526,9 @@ class User:
 
         session_encrypted_params = {"ip": ip_address, "ua": user_agent}
         for name, value in session_encrypted_params.items():
-            if value is None: continue
+            if value is None:
+                continue
+
             session[name] = value
 
         user["session"][session_id] = session
@@ -1548,7 +1555,7 @@ class User:
             break
 
         if "id" in hashed_fieds:
-            user_id = FastHashing().hash(user_id)
+            user_id = Hashing().hash(user_id)
 
         users = JSON.load(USERS_PATH)
         users[user_id] = user

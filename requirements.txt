@@ -4,6 +4,7 @@ flask
 ipaddress
 cryptography
 requests
+bs4
 jinja2
 python-magic
 python-magic-bin==0.4.14
