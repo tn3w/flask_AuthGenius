@@ -6,8 +6,7 @@ from typing import Optional, Tuple
 from flask import Flask, g, request, redirect, make_response, abort
 from .utils import JSON, error, convert_image_to_base64, generate_website_logo, is_current_route,\
                    get_client_ip, get_ip_info, render_template, get_random_item, get_url_from_request,\
-                   remove_args_from_url, Captcha, generate_random_string, WebPage, SymmetricCrypto,\
-                   SymmetricData
+                   remove_args_from_url, Captcha, generate_random_string, WebPage, SymmetricData
 
 DATA_DIR = os.path.join(pkg_resources.resource_filename('flask_AuthGenius', ''), 'data')
 ASSETS_DIR = pkg_resources.resource_filename('flask_AuthGenius', 'assets')
@@ -72,7 +71,7 @@ class AuthGenius:
         self.app = app
         self.website_name = website_name
         self.use_captchas = use_captchas
-        self.enc = SymmetricData(SymmetricCrypto(generate_random_string(30)))
+        self.enc = SymmetricData(generate_random_string(30))
 
         if use_captchas:
             self.captcha = Captcha(generate_random_string(30))

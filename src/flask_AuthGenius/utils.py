@@ -1,27 +1,30 @@
-import sys
 import os
-from typing import Optional, Union, Tuple
-from base64 import urlsafe_b64encode, urlsafe_b64decode, b64encode, b64decode
-import mimetypes
 import random
-import imghdr
-from io import BytesIO
-from urllib.parse import urlparse
+import re
+import io
+import base64
 import threading
 import json
-import re
-import secrets
-import hashlib
 from time import time
-from urllib.parse import urlparse, urlunparse, parse_qs, quote
 import ipaddress
+from typing import Optional, Union, Tuple
+from base64 import b64encode, b64decode, urlsafe_b64encode, urlsafe_b64decode
+import mimetypes
+import imghdr
+from io import BytesIO
+from urllib.parse import urlparse, urlunparse, parse_qs, quote
+import hashlib
+import secrets
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from flask import request
+import sys
+from urllib.parse import urlparse
 import pkg_resources
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.exceptions import InvalidKey, InvalidTag, UnsupportedAlgorithm, AlreadyFinalized
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import threading
 from werkzeug import Request
 from jinja2 import Environment, select_autoescape, Undefined
 from bs4 import BeautifulSoup, Tag
@@ -29,6 +32,8 @@ from googletrans import Translator
 from captcha.image import ImageCaptcha
 import requests
 import magic
+import pyotp
+import qrcode
 
 if __name__ == "__main__":
     sys.exit(2)
@@ -313,6 +318,28 @@ def shorten_ipv6(ip_address: str) -> str:
         return ip_address
 
 
+UNWANTED_IPS = ["127.0.0.1", "192.168.0.1", "10.0.0.1", "192.0.2.1", "198.51.100.1", "203.0.113.1"]
+IPV4_PATTERN = r'^(\d{1,3}\.){3}\d{1,3}$'
+IPV6_PATTERN = (
+    r'^('
+    r'([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|:'
+    r'|::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}'
+    r'|[0-9a-fA-F]{1,4}::([0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}'
+    r'|([0-9a-fA-F]{1,4}:){1,2}:([0-9a-fA-F]{1,4}:){0,4}[0-9a-fA-F]{1,4}'
+    r'|([0-9a-fA-F]{1,4}:){1,3}:([0-9a-fA-F]{1,4}:){0,3}[0-9a-fA-F]{1,4}'
+    r'|([0-9a-fA-F]{1,4}:){1,4}:([0-9a-fA-F]{1,4}:){0,2}[0-9a-fA-F]{1,4}'
+    r'|([0-9a-fA-F]{1,4}:){1,5}:([0-9a-fA-F]{1,4}:){0,1}[0-9a-fA-F]{1,4}'
+    r'|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}'
+    r'|([0-9a-fA-F]{1,4}:){1,7}|:((:[0-9a-fA-F]{1,4}){1,7}|:)'
+    r'|([0-9a-fA-F]{1,4}:)(:[0-9a-fA-F]{1,4}){1,7}'
+    r'|([0-9a-fA-F]{1,4}:){2}(:[0-9a-fA-F]{1,4}){1,6}'
+    r'|([0-9a-fA-F]{1,4}:){3}(:[0-9a-fA-F]{1,4}){1,5}'
+    r'|([0-9a-fA-F]{1,4}:){4}(:[0-9a-fA-F]{1,4}){1,4}'
+    r'|([0-9a-fA-F]{1,4}:){5}(:[0-9a-fA-F]{1,4}){1,3}'
+    r'|([0-9a-fA-F]{1,4}:){6}(:[0-9a-fA-F]{1,4}){1,2}'
+    r'|([0-9a-fA-F]{1,4}:){7}(:[0-9a-fA-F]{1,4}):)$'
+)
+
 def is_valid_ip(ip_address: Optional[str] = None) -> bool:
     """
     Checks whether the current Ip is valid
@@ -320,14 +347,13 @@ def is_valid_ip(ip_address: Optional[str] = None) -> bool:
     :param ip_address: Ipv4 or Ipv6 address (Optional)
     """
 
-    if ip_address == "127.0.0.1" or ip_address is None:
+    if not isinstance(ip_address, str)\
+        or ip_address is None\
+        or ip_address in UNWANTED_IPS:
         return False
 
-    ipv4_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-    ipv6_pattern = r'^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|:|::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}|[0-9a-fA-F]{1,4}::([0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,2}:([0-9a-fA-F]{1,4}:){0,4}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,3}:([0-9a-fA-F]{1,4}:){0,3}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,4}:([0-9a-fA-F]{1,4}:){0,2}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}:([0-9a-fA-F]{1,4}:){0,1}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}|:((:[0-9a-fA-F]{1,4}){1,7}|:)|([0-9a-fA-F]{1,4}:)(:[0-9a-fA-F]{1,4}){1,7}|([0-9a-fA-F]{1,4}:){2}(:[0-9a-fA-F]{1,4}){1,6}|([0-9a-fA-F]{1,4}:){3}(:[0-9a-fA-F]{1,4}){1,5}|([0-9a-fA-F]{1,4}:){4}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){5}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){6}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){7}(:[0-9a-fA-F]{1,4}):)$'
-
-    ipv4_regex = re.compile(ipv4_pattern)
-    ipv6_regex = re.compile(ipv6_pattern)
+    ipv4_regex = re.compile(IPV4_PATTERN)
+    ipv6_regex = re.compile(IPV6_PATTERN)
 
     if ipv4_regex.match(ip_address):
         octets = ip_address.split('.')
@@ -339,7 +365,7 @@ def is_valid_ip(ip_address: Optional[str] = None) -> bool:
     return False
 
 
-def get_client_ip() -> Optional[str]:
+def get_client_ip(request: Request) -> Optional[str]:
     "Get the client IP in v4 or v6"
 
     client_ip = request.remote_addr
@@ -357,16 +383,16 @@ def get_client_ip() -> Optional[str]:
         if is_valid_ip(client_ip):
             client_ip = shorten_ipv6(client_ip)
             return client_ip
-    
+
     try:
         client_ip = request.headers.getlist("X-Forwarded-For")[0].rpartition(' ')[-1]
-    except:
+    except KeyError:
         pass
     else:
         if is_valid_ip(client_ip):
             client_ip = shorten_ipv6(client_ip)
             return client_ip
-    
+
     headers_to_check = [
         'X-Forwarded-For',
         'X-Real-Ip',
@@ -381,7 +407,7 @@ def get_client_ip() -> Optional[str]:
             if is_valid_ip(client_ip):
                 client_ip = shorten_ipv6(client_ip)
                 return client_ip
-    
+
     return None
 
 
@@ -401,13 +427,14 @@ def get_ip_info(ip_address: str) -> dict:
     ip_api_cache = JSON.load(IP_API_CACHE_PATH)
 
     for hashed_ip, crypted_data in ip_api_cache.items():
-        comparison = FastHashing().compare(ip_address, hashed_ip)
+        comparison = Hashing().compare(ip_address, hashed_ip)
         if comparison:
-            data = SymmetricCrypto(ip_address).decrypt(crypted_data)
+            data = SymmetricEncryption(ip_address).decrypt(crypted_data)
 
             data_json = {}
             for i in range(23):
-                data_json[IP_INFO_KEYS[i]] = {"True": True, "False": False}.get(data.split("-&%-")[i], data.split("-&%-")[i])
+                data_json[IP_INFO_KEYS[i]] = {"True": True, "False": False}\
+                    .get(data.split("-&%-")[i], data.split("-&%-")[i])
 
             if int(time()) - int(data_json["time"]) > 518400:
                 del ip_api_cache[hashed_ip]
@@ -431,9 +458,9 @@ def get_ip_info(ip_address: str) -> dict:
             del response_json["status"], response_json["query"]
             response_json["time"] = int(time())
             response_string = '-&%-'.join([str(value) for value in response_json.values()])
-            
-            crypted_response = SymmetricCrypto(ip_address).encrypt(response_string)
-            hashed_ip = FastHashing().hash(ip_address)
+
+            crypted_response = SymmetricEncryption(ip_address).encrypt(response_string)
+            hashed_ip = Hashing().hash(ip_address)
 
             ip_api_cache[hashed_ip] = crypted_response
             JSON.dump(ip_api_cache, IP_API_CACHE_PATH)
@@ -451,7 +478,8 @@ def derive_password(
     Derives a secure password hash using PBKDF2-HMAC algorithm.
 
     :param password: The input password to be hashed.
-    :param salt: (Optional) A random byte string used as a salt. If not provided, a 32-byte random salt will be generated.
+    :param salt: (Optional) A random byte string used as a salt.
+                 If not provided, a 32-byte random salt will be generated.
     """
 
     if salt is None:
@@ -476,7 +504,7 @@ def is_valid_image(image_data: bytes) -> bool:
 
     :param image_data: Bytes representing the image.
     """
-    
+
     try:
         image_format = imghdr.what(None, h=image_data)
         if not image_format:
@@ -549,7 +577,7 @@ class JSON:
             if default is None:
                 return []
             return default
-        
+
         if not file_path in file_locks:
             file_locks[file_path] = threading.Lock()
 
@@ -557,7 +585,7 @@ class JSON:
             with open(file_path, "r", encoding = "utf-8") as file:
                 data = json.load(file)
             return data
-    
+
     @staticmethod
     def dump(data: Union[dict, list], file_path: str) -> None:
         """
@@ -571,7 +599,7 @@ class JSON:
         if not os.path.isdir(file_directory):
             error("JSON: Directory '" + file_directory + "' does not exist.")
             return
-        
+
         if not file_path in file_locks:
             file_locks[file_path] = threading.Lock()
 
@@ -580,70 +608,34 @@ class JSON:
                 json.dump(data, file)
 
 
-class FastHashing:
-    "Implementation for fast hashing"
-
-    def __init__(self, salt: Optional[str] = None):
-        ":param salt: The salt, makes the hashing process more secure (Optional)"
-
-        self.salt = salt
-
-    def hash(self, plain_text: str, salt_length: int = 8) -> str:
-        """
-        Function to hash a plaintext
-
-        :param plain_text: The text to be hashed
-        :param salt_length: The length of the salt
-        """
-
-        salt = self.salt
-        if salt is None:
-            salt = secrets.token_hex(salt_length)
-        plain_text = salt + plain_text
-
-        hash_object = hashlib.sha512(plain_text.encode())
-        hex_dig = hash_object.hexdigest()
-
-        return hex_dig + "//" + salt
-
-    def compare(self, plain_text: str, hash: str) -> bool:
-        """
-        Compares a plaintext with a hashed value
-
-        :param plain_text: The text that was hashed
-        :param hash: The hashed value
-        """
-
-        salt = self.salt
-        if "//" in hash:
-            hash, salt = hash.split("//")
-
-        salt_length = len(salt)
-
-        comparison_hash = FastHashing(salt=salt).hash(
-            plain_text, salt_length = salt_length).split("//")[0]
-
-        return comparison_hash == hash
-
-
 class Hashing:
-    "Implementation of secure hashing with SHA256 and 200000 iterations"
+    """
+    A utility class for hashing and comparing hashed values.
+    """
 
-    def __init__(self, salt: Optional[str] = None, without_salt: bool = False):
+    def __init__(self, salt: Optional[str] = None,
+                 without_salt: bool = False, iterations: int = 1000,
+                 urlsafe: bool = False):
         """
-        :param salt: The salt, makes the hashing process more secure (Optional)
-        :param without_salt: If True, no salt is added to the hash
+        :param salt: The salt value to be used for hashing.
+        :param without_salt: If True, hashing will be done without using salt.
+        :param iterations: The number of iterations for the key derivation function.
+        :param urlsafe: If True, base64 encoding will use URL-safe characters.  
         """
 
         self.salt = salt
         self.without_salt = without_salt
+        self.iterations = iterations
+        self.encoding = base64.b64encode if not urlsafe else base64.urlsafe_b64encode
+        self.decoding = base64.b64decode if not urlsafe else base64.urlsafe_b64decode
 
-    def hash(self, plain_text: str, hash_length: int = 32) -> str:
+    def hash(self, plain_text: str, hash_length: int = 8) -> str:
         """
-        Function to hash a plaintext
+        Hashes the provided plain text using PBKDF2 with SHA-256.
 
-        :param plain_text: The text to be hashed
-        :param hash_length: The length of the returned hashed value
+        :param plain_text: The plain text to be hashed.
+        :param hash_length: The length of the hashed value in bytes.
+        :return: The hashed value encoded as a string.
         """
 
         plain_text = str(plain_text).encode('utf-8')
@@ -656,34 +648,33 @@ class Hashing:
                 if not isinstance(salt, bytes):
                     try:
                         salt = bytes.fromhex(salt)
-                    except:
+                    except (ValueError, TypeError,
+                            UnicodeDecodeError, MemoryError):
                         salt = salt.encode('utf-8')
         else:
-            salt = None
+            salt = b''
 
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=hash_length,
+        hashed_data = hashlib.pbkdf2_hmac(
+            hash_name='sha256',
+            password=plain_text,
             salt=salt,
-            iterations=200000,
-            backend=default_backend()
+            iterations=self.iterations,
+            dklen=hash_length
         )
 
-        hashed_data = kdf.derive(plain_text)
-
+        hashed_value = self.encoding(hashed_data).decode('utf-8')
         if not self.without_salt:
-            hashed_value = b64encode(hashed_data).decode('utf-8') + "//" + salt.hex()
-        else:
-            hashed_value = b64encode(hashed_data).decode('utf-8')
+            hashed_value += "//" + salt.hex()
 
         return hashed_value
 
     def compare(self, plain_text: str, hashed_value: str) -> bool:
         """
-        Compares a plaintext with a hashed value
+        Compares a plain text with a hashed value to verify if they match.
 
-        :param plain_text: The text that was hashed
-        :param hashed_value: The hashed value
+        :param plain_text: The plain text to be compared.
+        :param hashed_value: The hashed value to compare against.
+        :return: True if the plain text matches the hashed value; otherwise, False.
         """
 
         if not self.without_salt:
@@ -696,17 +687,18 @@ class Hashing:
 
             salt = bytes.fromhex(salt)
         else:
-            salt = None
+            salt = b''
 
-        hash_length = len(b64decode(hashed_value))
+        hash_length = len(self.decoding(hashed_value))
 
-        comparison_hash = Hashing(salt=salt, without_salt = self.without_salt)\
-            .hash(plain_text, hash_length = hash_length).split("//")[0]
+        comparison_hash = self.hash(
+            plain_text, hash_length = hash_length
+        ).split("//")[0]
 
         return comparison_hash == hashed_value
 
 
-class SymmetricCrypto:
+class SymmetricEncryption:
     """
     Implementation of symmetric encryption with AES
     """
@@ -751,49 +743,76 @@ class SymmetricCrypto:
 
         return urlsafe_b64encode(salt + iv + ciphertext).decode()
 
-    def decrypt(self, cipher_text: str) -> str:
+    def decrypt(self, cipher_text: str) -> Optional[str]:
         """
         Decrypts a text
 
         :param ciphertext: The encrypted text
         """
 
-        cipher_text = urlsafe_b64decode(cipher_text.encode())
+        try:
+            cipher_text = urlsafe_b64decode(cipher_text.encode())
 
-        salt, iv, cipher_text = cipher_text[:self.salt_length], cipher_text[self.salt_length:self.salt_length + 16], cipher_text[self.salt_length + 16:]
+            salt, iv, cipher_text = cipher_text[:self.salt_length],\
+                cipher_text[self.salt_length:self.salt_length + 16],\
+                    cipher_text[self.salt_length + 16:]
 
-        kdf_ = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=100000,
-            backend=default_backend()
-        )
-        key = kdf_.derive(self.password)
+            kdf_ = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=100000,
+                backend=default_backend()
+            )
+            key = kdf_.derive(self.password)
 
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        decryptor = cipher.decryptor()
-        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-        decrypted_data = decryptor.update(cipher_text) + decryptor.finalize()
-        plaintext = unpadder.update(decrypted_data) + unpadder.finalize()
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+            decryptor = cipher.decryptor()
+            unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+            decrypted_data = decryptor.update(cipher_text) + decryptor.finalize()
+            plaintext = unpadder.update(decrypted_data) + unpadder.finalize()
+        except (InvalidKey, InvalidTag,
+                UnsupportedAlgorithm,
+                AlreadyFinalized):
+            return None
 
         return plaintext.decode()
 
 
 class SymmetricData:
+    """
+    A utility class for symmetric encryption and encoding/decoding data.
+    """
 
-    def __init__(self, symmetric_crypto: SymmetricCrypto):
-        self.symmetric_crypto = symmetric_crypto
+    def __init__(self, secret: str):
+        """
+        :param secret: A secret string to encrypt the data
+        """
+
+        self.sym_enc = SymmetricEncryption(secret)
 
     def encode(self, data: list | dict) -> str:
-        encoded_data = json.dumps(data)
-        return self.symmetric_crypto.encrypt(encoded_data)
+        """
+        Encodes the provided data (list or dictionary) into a string after
+        JSON serialization and symmetric encryption.
 
-    def decode(self, text: str) -> list | dict | None:
-        try:
-            decrypted_data = self.symmetric_crypto.decrypt(text)
-        except:
-            return None
+        :param data: The data (list or dictionary) to be encoded.
+        :return: The encoded and encrypted data as a string.
+        """
+
+        encoded_data = json.dumps(data)
+        return self.sym_enc.encrypt(encoded_data)
+
+    def decode(self, text: str) -> Optional[Union[list, dict]]:
+        """
+        Decodes the provided encrypted text back into a list or dictionary
+        after decryption and JSON deserialization. Returns None if decryption fails.
+
+        :param: The encrypted text to be decoded.
+        :return: The decoded data (list or dictionary) if decryption is successful; otherwise, None.
+        """
+
+        decrypted_data = self.sym_enc.decrypt(text)
         return json.loads(decrypted_data)
 
 
@@ -806,11 +825,17 @@ class NoEncryption:
         pass
 
     def encrypt(self = None, plain_text: str = "Dummy") -> str:
-        "Dummy encryption method that returns the input plain text unchanged"
+        """
+        Dummy encryption method that returns the input plain text unchanged
+        """
+
         return plain_text
 
     def decrypt(self = None, cipher_text: str = "Dummy") -> str:
-        "Dummy decryption method that returns the input cipher text unchanged."
+        """
+        Dummy decryption method that returns the input cipher text unchanged.
+        """
+
         return cipher_text
 
 
@@ -1219,7 +1244,9 @@ class WebPage:
 
 
 class Captcha:
-    "Class to generate and verify a captcha"
+    """
+    Class to generate and verify a captcha
+    """
 
     def __init__(self, captcha_secret: str):
         """
@@ -1229,7 +1256,11 @@ class Captcha:
         self.captcha_secret = captcha_secret
 
     def generate(self, data: dict) -> Tuple[str, str]:
-        "Generate a captcha for the client"
+        """
+        Generate a captcha for the client
+
+        :param data: Some client data, that doesn't change
+        """
 
         image_captcha_code = generate_random_string(
             secrets.choice([6, 7, 8]), with_punctuation=False
@@ -1239,7 +1270,7 @@ class Captcha:
         minimized_data = json.dumps(data, indent = None, separators = (',', ':'))
         captcha_prove = image_captcha_code + "//" + minimized_data
 
-        crypted_captcha_prove = SymmetricCrypto(self.captcha_secret).encrypt(captcha_prove)
+        crypted_captcha_prove = SymmetricEncryption(self.captcha_secret).encrypt(captcha_prove)
 
         image_captcha = ImageCaptcha(width=480, height=120, fonts=FONTS)
 
@@ -1255,15 +1286,15 @@ class Captcha:
 
         :param client_input: The input from the client
         :param crypted_captcha_prove: The encrypted captcha prove generated by the generate function
+        :param data: The original client data
         """
 
-        try:
-            captcha_prove = SymmetricCrypto(self.captcha_secret).decrypt(crypted_captcha_prove)
-
-            captcha_code, captcha_data = captcha_prove.split("//")
-            captcha_data = json.loads(captcha_data)
-        except:
+        captcha_prove = SymmetricEncryption(self.captcha_secret).decrypt(crypted_captcha_prove)
+        if captcha_prove is None:
             return 'time'
+
+        captcha_code, captcha_data = captcha_prove.split("//")
+        captcha_data = json.loads(captcha_data)
 
         if int(time() - captcha_data.get('time', float('inf'))) > 120:
             return 'time'
@@ -1274,6 +1305,121 @@ class Captcha:
             return 'code'
 
         return None
+
+
+class TOTP:
+    """
+    Class representing Time-based One-Time Password (TOTP) functionality.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the TOTP instance.
+        """
+        self.used_codes = {}
+
+    def _clean_used_codes(self) -> None:
+        """
+        Clean up the used codes dictionary by removing expired entries.
+        """
+
+        new_used_codes = self.used_codes.copy()
+        for secret, used_codes in self.used_codes.items():
+            new_used_codes = []
+            for used_code, use_time in used_codes:
+                if int(time() - use_time) <= 30:
+                    new_used_codes.append((used_code, use_time))
+
+            if len(new_used_codes) == 0:
+                del new_used_codes[secret]
+            else:
+                new_used_codes[secret] = new_used_codes
+
+        self.used_codes = new_used_codes
+
+    def _add_to_used_codes(self, used_code: str, secret: str) -> None:
+        """
+        Add a used code to the tracked dictionary after cleaning expired entries.
+
+        :param used_code: The code that has been used.
+        :param secret: The secret associated with the code.
+        """
+
+        self._clean_used_codes()
+
+        hashed_secret = Hashing().hash(secret)
+        hashed_code = Hashing().hash(used_code)
+
+        used_codes = self.used_codes.get(hashed_secret, [])
+        used_codes.append((hashed_code, time()))
+        self.used_codes[hashed_secret] = used_codes
+
+    def _is_already_used(self, code: str, secret: str) -> bool:
+        """
+        Check if a given code with its secret has already been used.
+
+        :param code: The code to check.
+        :param secret: The secret associated with the code.
+        :return: True if the code is already used, False otherwise.
+        """
+
+        self._clean_used_codes()
+
+        for hashed_secret, used_codes in self.used_codes.items():
+            if Hashing().compare(secret, hashed_secret):
+                for used_code in used_codes:
+                    if Hashing().compare(code, used_code):
+                        return True
+
+        return False
+
+    @staticmethod
+    def generate_new(issuer_name: str, user_name: str) -> Tuple[str, str]:
+        """
+        Generate a new TOTP secret and associated QR code.
+
+        :param issuer_name: The name of the issuer (e.g., the service provider).
+        :param user_name: The name of the user.
+        :return: A tuple containing the generated secret and a base64 encoded PNG image URI.
+        """
+
+        secret = pyotp.random_base32()
+
+        totp = pyotp.TOTP(secret)
+
+        uri = totp.provisioning_uri(user_name, issuer_name = issuer_name)
+        qr = qrcode.QRCode()
+        qr.add_data(uri)
+        qr.make()
+
+        img = qr.make_image(fill='black', back_color='white')
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, format='PNG')
+        img_data = img_bytes.getvalue()
+        base64_img = b64encode(img_data).decode('utf-8')
+
+        return secret, 'data:image/png;base64,' + base64_img
+
+    def verify(self, user_inp: str, secret: str) -> bool:
+        """
+        Verify a user input against a provided secret using TOTP.
+
+        :param user_inp: The user's input code.
+        :param secret: The secret to verify against.
+        :return: True if the input is valid and not previously used, False otherwise.
+        """
+
+        totp = pyotp.TOTP(secret)
+        current_code = totp.now()
+
+        if str(user_inp) != str(current_code):
+            return False
+
+        if self._is_already_used(current_code, secret):
+            return False
+
+        self._add_to_used_codes(current_code, secret)
+        return True
 
 
 class User:
@@ -1324,13 +1470,17 @@ class User:
             sc = SymmetricCrypto(derived_password)
         else:
             encrypted_fields = []
-        
-        if display_name != None: user["displayname"] = display_name
-        if hashed_fieds is None: hashed_fieds = []
+
+        if display_name != None:
+            user["displayname"] = display_name
+        if hashed_fieds is None:
+            hashed_fieds = []
 
         hashing_params = {"username": username, "email": email}
         for name, value in hashing_params.items():
-            if value is None: continue
+            if value is None:
+                continue
+
             if name in hashed_fieds:
                 value = FastHashing().hash(value)
             user[name] = value
@@ -1340,11 +1490,13 @@ class User:
             "gender": gender, "country": country, "language": language, "theme": theme
         }
         for name, value in encrypted_params.items():
-            if value is None: continue
+            if value is None:
+                continue
+
             if name in encrypted_fields:
                 value = sc.encrypt(value)
             user[name] = value
-        
+
         if not (profile_picture is None and profile_picture_index is None):
             if profile_picture is None:
                 profile_picture = str(profile_picture_index)
@@ -1352,14 +1504,15 @@ class User:
                 if is_valid_image(profile_picture):
                     profile_picture = resize_image(profile_picture)
                     if profile_picture is not None:
-                        profile_picture = 'data:image/webp;base64,' + b64encode(profile_picture).decode('utf-8')
+                        profile_picture = 'data:image/webp;base64,' +\
+                            b64encode(profile_picture).decode('utf-8')
                 else:
                     profile_picture = None
 
                 if profile_picture is None:
                     _, random_pp_index = generate_random_profile_picture()
                     profile_picture = str(random_pp_index)
-        
+
         session_id = generate_random_string(6, with_punctuation=False)
         session_token = generate_random_string(24)
         session_token_hash = Hashing().hash(session_token)
@@ -1372,7 +1525,7 @@ class User:
             session[name] = value
 
         user["session"][session_id] = session
-        
+
         users = JSON.load(USERS_PATH)
 
         while True:
@@ -1390,12 +1543,13 @@ class User:
                         is_used = True
                         break
 
-            if is_used: continue
+            if is_used:
+                continue
             break
 
         if "id" in hashed_fieds:
             user_id = FastHashing().hash(user_id)
-        
+
         users = JSON.load(USERS_PATH)
         users[user_id] = user
 
