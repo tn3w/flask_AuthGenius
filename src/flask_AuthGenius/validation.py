@@ -1,7 +1,7 @@
-from typing import Optional
+from typing import Tuple, Optional
 from werkzeug import Request
 from .auth import UserSystem
-from .utils import WebPage, Captcha, SymmetricData, TOTP, is_email, get_url_from_request, remove_args_from_url
+from .utils import WebPage, Captcha, SymmetricData, TOTP, get_url_from_request, remove_args_from_url
 
 class Validation:
     """
@@ -10,7 +10,8 @@ class Validation:
 
     @staticmethod
     def validate_login(request: Request, user_system: UserSystem,
-                       captcha: Captcha, use_captchas: bool = True) -> Optional[dict]:
+                       captcha: Captcha, use_captchas: bool = True)\
+                        -> Tuple[Optional[dict], Optional[dict]]:
         """
         Validate user login credentials and process captcha if required.
 
@@ -47,23 +48,21 @@ class Validation:
             elif password is None and not name is None:
                 error_fields.append('password')
             response['error_fields'] = error_fields
-            return response
+            return response, None
 
-        user = None
-        if is_email(name):
-            user = user_system.get_user(user_email = name, return_id = True)
+        user = user_system.get_user(
+            user_name = name, user_email = name,
+            password = password, return_id = True,
+            decrypt_only_fields = ['id']
+        )
 
-        if user is None:
-            user = user_system.get_user(
-                user_name = name, user_email = name, return_id = True
-            )
-
+        print(user)
         if user is None:
             response['error'] = WebPage.translate_text(
                 'The username / email was not found.', 'en', language
             )
             response['error_fields'] = ['name']
-            return response
+            return response, user
 
         user_id = user.get('hid') if user.get('id') is None else user.get('id')
 
@@ -105,7 +104,7 @@ class Validation:
 
                 response['content']['captcha_img'] = captcha_img
                 response['content']['captcha_secret'] = captcha_secret
-                return response
+                return response, user
 
         if not user_system.is_password_correct(user_id, password):
             user_system.add_failed_attempt(user_id)
@@ -114,14 +113,15 @@ class Validation:
                 'The password is not correct.', 'en', language
             )
             response['error_fields'] = ['password']
-            return response
+            return response, user
 
-        return None
+        return None, user
 
     @staticmethod
     def validate_login_2fa(request: Request, user_system: UserSystem,
                            captcha: Captcha, encryptor: SymmetricData,
-                           totp: TOTP, use_captchas: bool = True) -> Optional[dict]:
+                           totp: TOTP, use_captchas: bool = True)\
+                            -> Tuple[Optional[dict], Optional[dict]]:
         data = request.form
         if request.is_json and request.method.lower() == 'post':
             data = request.get_json()
@@ -139,20 +139,17 @@ class Validation:
             response['error'] = WebPage.translate_text(
                 'Please fill in all fields.', 'en', language
             )
-            return response
+            return response, None
 
         user = None
         decrypted_data = encryptor.decode(user_data)
         if decrypted_data is not None:
             user_name = decrypted_data['name']
-
-            if is_email(user_name):
-                user = user_system.get_user(user_email = user_name, return_id = True)
-
-            if user is None:
-                user = user_system.get_user(
-                    user_name = user_name, user_email = user_name, return_id = True
-                )
+            user = user_system.get_user(
+                user_name = user_name, user_email = user_name,
+                password = decrypted_data['password'],
+                decrypt_only_fields = ['id'], return_id = True
+            )
 
         if None in [decrypted_data, user]:
             current_url = get_url_from_request(request)
@@ -160,11 +157,14 @@ class Validation:
             current_args = current_url.replace(current_url_without_args, "")
 
             response['content']['redirection_url'] = '/login' + current_args
-            return response
+            return response, None
 
         language = WebPage.client_language(request, 'en')
 
-        user_id = user.get('hid') if user.get('id') is None else user.get('id')
+        user_id = user['data']['id']
+
+        if not user_system.does_have_2fa(user_id):
+            return None, user
 
         if use_captchas and user_system.should_captcha_be_used(user_id):
             failed_captcha = False
@@ -207,7 +207,7 @@ class Validation:
 
         secret = user_system.get_2fa_secret(user_id, decrypted_data['password'])
         if secret is None:
-            return None
+            return None, user
 
         if not totp.verify(totp_code, secret):
             user_system.add_failed_attempt(user_id)
@@ -215,6 +215,6 @@ class Validation:
             response['error'] = WebPage.translate_text(
                 'The code entered is incorrect.', 'en', language
             )
-            return response
+            return response, user
 
-        return None
+        return None, user

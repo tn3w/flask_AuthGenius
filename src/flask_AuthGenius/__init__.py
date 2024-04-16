@@ -6,9 +6,10 @@ from typing import Optional, Tuple
 from flask import Flask, g, request, redirect, make_response, abort
 from .utils import JSON, error, convert_image_to_base64, generate_website_logo, is_current_route,\
                    get_client_ip, get_ip_info, render_template, get_random_item, get_url_from_request,\
-                   remove_args_from_url, Captcha, generate_random_string, WebPage, SymmetricData, TOTP
+                   remove_args_from_url, Captcha, generate_random_string, SymmetricData, TOTP, WebPage
 from .auth import UserSystem
 from .validation import Validation
+
 
 try:
     CURRENT_DIR_PATH = pkg_resources.resource_filename('flask_AuthGenius', '')
@@ -52,8 +53,10 @@ SIGNATURES = [
     "Dive deeper into our community."
 ]
 
+
 class AuthGenius:
     "Shows the user a login prompt on certain routes"
+
 
     def __init__(
             self, app: Flask,
@@ -138,6 +141,7 @@ class AuthGenius:
             print(template)
             return template
 
+
     @property
     def _need_authentication(self) -> bool:
         "Whether authorization is required on the current route"
@@ -158,6 +162,7 @@ class AuthGenius:
                 return True
         return False
 
+
     @property
     def _add_popup(self) -> bool:
         "Whether a pop-up window should be inserted on the current page"
@@ -170,6 +175,7 @@ class AuthGenius:
                 return True
         return False
 
+
     @property
     def _is_own_page(self) -> bool:
         "Whether the current page is a page of flask_AuthGenius"
@@ -178,6 +184,7 @@ class AuthGenius:
         if isinstance(is_own_page, bool):
             return is_own_page
         return False
+
 
     @property
     def _client_language(self) -> Tuple[str, bool]:
@@ -211,6 +218,7 @@ class AuthGenius:
 
         return "en", True
 
+
     @property
     def _client_theme(self) -> Tuple[str, bool]:
         """
@@ -238,19 +246,95 @@ class AuthGenius:
 
         return theme, False
 
+
+    @property
+    def _client_ip(self) -> str:
+        """
+        The IP address of the client
+        """
+
+        if hasattr(g, 'client_ip'):
+            if isinstance(g.client_ip, str):
+                return g.client_ip
+
+        client_ip, is_invalid_ip = get_client_ip(request)
+
+        g.client_ip = client_ip
+        g.is_invalid_ip = is_invalid_ip
+        return client_ip
+
+
+    @property
+    def _client_invalid_ip(self) -> bool:
+        """
+        Whether the IP of the client is invalid
+        """
+
+        if hasattr(g, 'is_invalid_ip'):
+            if isinstance(g.is_invalid_ip, bool):
+                return g.is_invalid_ip
+
+        client_ip, is_invalid_ip = get_client_ip(request)
+
+        g.client_ip = client_ip
+        g.is_invalid_ip = is_invalid_ip
+        return is_invalid_ip
+
+
+    @property
+    def _client_ip_info(self) -> dict | None:
+        """
+        The information about the Ip address of the client
+        """
+
+        ip_info = None
+        if hasattr(g, 'client_ip_info'):
+            if isinstance(g.client_ip_info, dict):
+                return g.client_ip_info
+            else:
+                ip_info = g.client_ip_info
+
+        if ip_info is None:
+            if self._client_invalid_ip:
+                ip_info = None
+            else:
+                ip_info = get_ip_info(self._client_ip)
+                g.client_ip_info = ip_info
+
+        return ip_info
+
+
+    @property
+    def _client_user_agent(self) -> str:
+        """
+        The User Agent of the client
+        """
+
+        if hasattr(g, 'client_user_agent'):
+            if isinstance(g.client_user_agent, str):
+                return g.client_user_agent
+
+        client_user_agent = request.user_agent.string
+        g.client_user_agent = client_user_agent
+
+        return client_user_agent
+
+
     def _set_client_information(self) -> None:
         "Sets the client information for certain requests"
 
-        client_ip = get_client_ip(request)
+        client_ip, is_invalid_ip = get_client_ip(request)
         client_user_agent = request.user_agent.string
 
         client_ip_info = None
-        if client_ip is not None:
+        if client_ip is not None and not is_invalid_ip:
             client_ip_info = get_ip_info(client_ip)
 
         g.client_ip = client_ip
+        g.is_invalid_ip = is_invalid_ip
         g.client_ip_info = client_ip_info
         g.client_user_agent = client_user_agent
+
 
     def _authenticate(self) -> None:
         if self._need_authentication:
@@ -260,6 +344,7 @@ class AuthGenius:
 
             special_char = '?' if not '?' in current_args else '&'
             return redirect('/login' + current_args + special_char + 'return=' + request.path)
+
 
     def _login_route(self):
         signature = get_random_item(SIGNATURES, 60)
@@ -283,21 +368,6 @@ class AuthGenius:
             stay = request.form.get('stay', '0')
             stay = '1' if stay == '1' else '0'
 
-            response = Validation.validate_login(
-                request, self.user_system, self.captcha, self.use_captchas
-            )
-            if response is None:
-                enc_data = self.enc.encode(
-                    {'name': name, 'password': password,
-                     'stay': stay, "return": return_url}
-                )
-
-                return render_template(
-                    'twofactor-app.html', request, website_logo = self.website_logo,
-                    website_name = self.website_name, data = enc_data,
-                    response = {"error": None, "error_fields": [], "content": {}}
-                )
-
         if not request.args.get('data') is None:
             dec_data = self.enc.decode(request.args.get('data'))
             if dec_data is not None:
@@ -306,12 +376,60 @@ class AuthGenius:
 
             return_url = dec_data['return']
 
+        if not None in [name, password]:
+            response, user = Validation.validate_login(
+                request, self.user_system, self.captcha, self.use_captchas
+            )
+            if response is None:
+                user_id = user.get('hid') if user.get('id') is None else user.get('id')
+
+                enc_data = self.enc.encode(
+                    {'name': name, 'password': password,
+                     'stay': stay, "return": return_url,
+                     'uid': user_id}
+                )
+                if not self.user_system.does_have_2fa(user_id):
+                    real_user_id = user['data']['id']
+                    session_data = {
+                        'ip': self._client_ip,
+                        'ua': self._client_user_agent
+                    }
+
+                    is_default_language, language = self._client_language
+                    if not is_default_language:
+                        session_data['language'] = language
+
+                    is_default_theme, theme = self._client_theme
+                    if not is_default_theme:
+                        session_data['theme'] = theme
+
+                    session_id, session_token = self.user_system.create_session(
+                        real_user_id, password, session_data
+                    )
+
+                    session_text = real_user_id + session_id + session_token
+
+                    special_char = '?' if '?' not in return_url else '&'
+                    redirection_url = return_url + special_char + 'session=' + session_text
+
+                    response = make_response(redirect(redirection_url))
+                    if stay == '1':
+                        response.set_cookie('Session', session_text, max_age = 31536000)
+                    return response
+
+                return render_template(
+                    'twofactor-app.html', request, website_logo = self.website_logo,
+                    website_name = self.website_name, data = enc_data,
+                    response = {"error": None, "error_fields": [], "content": {}}
+                )
+
         return render_template(
             'login.html', request, website_logo = self.website_logo,
             website_name = self.website_name, signature = signature,
             return_url = return_url, response = response, name = name,
             password = password, stay = stay
         )
+
 
     def _login_api_route(self):
         response = {"error": None, "error_fields": [], "content": {}}
@@ -323,7 +441,7 @@ class AuthGenius:
 
         data = request.get_json()
 
-        new_response = Validation.validate_login(
+        new_response, user = Validation.validate_login(
             request, self.user_system, self.captcha, self.use_captchas
         )
 
@@ -345,27 +463,58 @@ class AuthGenius:
              "stay": stay, "return": return_url}
         )
 
+        user_id = user.get('hid') if user.get('id') is None else user.get('id')
+        if not self.user_system.does_have_2fa(user_id):
+            real_user_id = user['data']['id']
+            session_data = {
+                'ip': self._client_ip,
+                'ua': self._client_user_agent
+            }
+
+            is_default_language, language = self._client_language
+            if not is_default_language:
+                session_data['language'] = language
+
+            is_default_theme, theme = self._client_theme
+            if not is_default_theme:
+                session_data['theme'] = theme
+
+            session_id, session_token = self.user_system.create_session(
+                real_user_id, password, session_data
+            )
+
+            session_text = real_user_id + session_id + session_token
+
+            special_char = '?' if '?' not in return_url else '&'
+            redirection_url = return_url + special_char + 'session=' + session_text
+            response['content']['redirection_url'] = redirection_url
+
+            response['content']['stay'] = stay
+            response['content']['session'] = session_text
+            return response
+
         response['content']['new_html'] = render_template(
             'twofactor-app.html', request, website_logo = self.website_logo,
             website_name = self.website_name, data = enc_data, response = response
         )
         return response
 
+
     def _login_2fa_route(self):
         is_invalid_data = False
         if request.args.get('data') is None and request.form.get('data') is None:
             is_invalid_data = True
         else:
-            dec_data = None
+            decrypted_data = None
             data = None
             if request.args.get('data') is not None:
                 data = request.args.get('data')
-                dec_data = self.enc.decode(request.args.get('data'))
-            if request.form.get('data') is not None and dec_data is None:
+                decrypted_data = self.enc.decode(request.args.get('data'))
+            if request.form.get('data') is not None and decrypted_data is None:
                 data = request.form.get('data')
-                dec_data = self.enc.decode(request.form.get('data'))
+                decrypted_data = self.enc.decode(request.form.get('data'))
 
-            if dec_data is None:
+            if decrypted_data is None:
                 is_invalid_data = True
 
         if is_invalid_data:
@@ -378,24 +527,42 @@ class AuthGenius:
         totp = None
 
         if request.method.lower() == 'post':
-            user_data = request.form.get('data')
             totp = request.form.get('totp')
 
-            response = Validation.validate_login_2fa(
+            response, user = Validation.validate_login_2fa(
                 request, self.user_system, self.captcha, self.enc,
                 self.totp, self.use_captchas
             )
 
             if response is None:
-                dec_data = self.enc.decode(user_data)
+                session_data = {
+                    'ip': self._client_ip,
+                    'ua': self._client_user_agent
+                }
 
-                # FIXME: Create Session
-                special_char = '?' if not '?' in dec_data['return'] else '&'
-                redirection_url = dec_data['return'] + special_char + 'session=yeah!'
+                is_default_language, language = self._client_language
+                if not is_default_language:
+                    session_data['language'] = language
+
+                is_default_theme, theme = self._client_theme
+                if not is_default_theme:
+                    session_data['theme'] = theme
+
+                user_id = user['data']['id']
+
+                session_id, session_token = self.user_system.create_session(
+                    user_id, decrypted_data['password'], session_data
+                )
+
+                session_text = user_id + session_id + session_token
+
+                special_char = '?' if not '?' in decrypted_data['return'] else '&'
+                redirection_url = decrypted_data['return'] + special_char\
+                                  + 'session=' + session_text
 
                 response = make_response(redirect(redirection_url))
-                if dec_data['stay'] == '1':
-                    response.set_cookie('Session', 'yeah!', max_age = 31536000)
+                if decrypted_data['stay'] == '1':
+                    response.set_cookie('Session', session_text, max_age = 31536000)
                 return response
 
         return render_template(
@@ -403,6 +570,7 @@ class AuthGenius:
             website_name = self.website_name, data = data, response = response,
             totp = totp
         )
+
 
     def _login_2fa_api_route(self):
         response = {"error": None, "error_fields": [], "content": {}}
@@ -415,19 +583,40 @@ class AuthGenius:
         data: dict = request.get_json()
         user_data = data.get('data')
 
-        new_response = Validation.validate_login_2fa(
+        new_response, user = Validation.validate_login_2fa(
             request, self.user_system, self.captcha, self.enc,
             self.totp, self.use_captchas
         )
         if new_response is not None:
             return new_response
 
-        dec_data = self.enc.decode(user_data)
+        decrypted_data = self.enc.decode(user_data)
 
-        # FIXME: Create Session
-        response['content']['session'] = 'yeah!'
-        response['content']['stay'] = dec_data['stay']
-        special_char = '?' if not '?' in dec_data['return'] else '&'
-        response['content']['redirection_url'] =\
-            dec_data['return'] + special_char + 'session=yeah!'
+        session_data = {
+            'ip': self._client_ip,
+            'ua': self._client_user_agent
+        }
+
+        is_default_language, language = self._client_language
+        if not is_default_language:
+            session_data['language'] = language
+
+        is_default_theme, theme = self._client_theme
+        if not is_default_theme:
+            session_data['theme'] = theme
+
+        user_id = user['data']['id']
+
+        session_id, session_token = self.user_system.create_session(
+            user_id, decrypted_data['password'], session_data
+        )
+
+        session_text = user_id + session_id + session_token
+
+        response['content']['session'] = session_token
+        response['content']['stay'] = decrypted_data['stay']
+
+        special_char = '?' if not '?' in decrypted_data['return'] else '&'
+        response['content']['redirection_url'] = decrypted_data['return'] +\
+                                 special_char + 'session=' + session_text
         return response

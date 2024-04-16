@@ -345,17 +345,20 @@ IPV6_PATTERN = (
     r'|([0-9a-fA-F]{1,4}:){7}(:[0-9a-fA-F]{1,4}):)$'
 )
 
-def is_valid_ip(ip_address: Optional[str] = None) -> bool:
+
+def is_valid_ip(ip_address: Optional[str] = None,
+                without_filter: bool = False) -> bool:
     """
     Checks whether the current Ip is valid
     
     :param ip_address: Ipv4 or Ipv6 address (Optional)
     """
 
-    if not isinstance(ip_address, str)\
-        or ip_address is None\
-        or ip_address in UNWANTED_IPS:
-        return False
+    if not without_filter:
+        if not isinstance(ip_address, str)\
+            or ip_address is None\
+            or ip_address in UNWANTED_IPS:
+            return False
 
     ipv4_regex = re.compile(IPV4_PATTERN)
     ipv6_regex = re.compile(IPV6_PATTERN)
@@ -370,13 +373,18 @@ def is_valid_ip(ip_address: Optional[str] = None) -> bool:
     return False
 
 
-def get_client_ip(request: Request) -> Optional[str]:
-    "Get the client IP in v4 or v6"
+def get_client_ip(request: Request) -> Union[Optional[str], bool]:
+    """
+    Get the client IP in v4 or v6
+    """
+
+    invalid_ips = []
 
     client_ip = request.remote_addr
+    invalid_ips.append(client_ip)
     if is_valid_ip(client_ip):
         client_ip = shorten_ipv6(client_ip)
-        return client_ip
+        return client_ip, False
 
     other_client_ips = [
         request.environ.get('HTTP_X_REAL_IP', None),
@@ -385,18 +393,20 @@ def get_client_ip(request: Request) -> Optional[str]:
     ]
 
     for client_ip in other_client_ips:
+        invalid_ips.append(client_ip)
         if is_valid_ip(client_ip):
             client_ip = shorten_ipv6(client_ip)
-            return client_ip
+            return client_ip, False
 
     try:
-        client_ip = request.headers.getlist("X-Forwarded-For")[0].rpartition(' ')[-1]
-    except (KeyError, IndexError):
+        client_ip = request.headers.getlist('X-Forwarded-For')[0].rpartition(' ')[-1]
+    except (IndexError, AttributeError, ValueError, TypeError):
         pass
     else:
+        invalid_ips.append(client_ip)
         if is_valid_ip(client_ip):
             client_ip = shorten_ipv6(client_ip)
-            return client_ip
+            return client_ip, False
 
     headers_to_check = [
         'X-Forwarded-For',
@@ -409,11 +419,21 @@ def get_client_ip(request: Request) -> Optional[str]:
         if header in request.headers:
             client_ip = request.headers[header]
             client_ip = client_ip.split(',')[0].strip()
+            invalid_ips.append(client_ip)
             if is_valid_ip(client_ip):
                 client_ip = shorten_ipv6(client_ip)
-                return client_ip
+                return client_ip, False
 
-    return None
+    for invalid_ip in invalid_ips:
+        if isinstance(invalid_ip, str):
+            if is_valid_ip(invalid_ip, True):
+                return invalid_ip, True
+
+    for invalid_ip in invalid_ips:
+        if isinstance(invalid_ip, str):
+            return invalid_ip, True
+
+    return None, False
 
 
 def random_user_agent() -> str:
