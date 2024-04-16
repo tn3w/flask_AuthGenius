@@ -1243,9 +1243,7 @@ class Captcha:
         :param data: Some client data, that doesn't change
         """
 
-        image_captcha_code = generate_random_string(
-            secrets.choice([6, 7, 8]), with_punctuation=False
-        )
+        image_captcha_code = generate_random_string(6, with_punctuation=False).lower()
 
         data['time'] = int(time())
         minimized_data = json.dumps(data, indent = None, separators = (',', ':'))

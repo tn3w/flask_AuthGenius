@@ -41,26 +41,26 @@ class UserSystem(dict):
         users[user_id] = user_data
         self._dump(users)
 
-    def __getitem__(self, user_id: str) -> Optional[dict]:
+    def __getitem__(self, user_id: str) -> Tuple[Optional[str], Optional[dict]]:
         for index in range(2):
             for hashed_user_id, user_data in self.users.items():
                 if user_id == hashed_user_id:
-                    return user_data
+                    return (hashed_user_id, user_data)
 
                 if index == 1:
                     if Hashing().compare(user_id, hashed_user_id):
-                        return user_data
+                        return (hashed_user_id, user_data)
 
-        return None
+        return (None, None)
 
     ############
     ### User ###
     ############
 
     def create_user(self, password: str, user_name: Optional[str] = None,
-               user_email: Optional[str] = None,
-               other_user_data: Optional[dict] = None,
-               encrypted_fields: Optional[list] = None) -> str:
+                    user_email: Optional[str] = None,
+                    other_user_data: Optional[dict] = None,
+                    encrypted_fields: Optional[list] = None) -> str:
 
         if other_user_data is None:
             other_user_data = {}
@@ -90,7 +90,7 @@ class UserSystem(dict):
         user['data'] = user_data
 
         user_id = generate_random_string(12, False)
-        while self[user_id] is not None or user_id in self.reserved_user_ids:
+        while None not in self[user_id] or user_id in self.reserved_user_ids:
             user_id = generate_random_string(12, False)
 
         self.reserved_user_ids.append(user_id)
@@ -115,10 +115,12 @@ class UserSystem(dict):
         user = None
 
         if user_id is not None:
-            user = self[user_id]
+            hashed_user_id, user_data = self[user_id]
 
-            if user is not None and return_id:
-                user['id'] = user_id
+            user = user_data
+            if hashed_user_id is not None and return_id:
+                user_data['id'] = user_id
+                user_data['hid'] = hashed_user_id
 
         if user is None and user_name is not None:
             for hashed_user_id, user_data in self.users.items():
@@ -166,21 +168,48 @@ class UserSystem(dict):
         user['data'] = decrypted_data
         return user
 
+    def add_2fa(self, user_id: str, password: str, secret: str) -> None:
+        hashed_user_id, user_data = self[user_id]
+        if None in [hashed_user_id, user_data]:
+            return
+
+        encrypted_2fa_secret = user_data.get('e2fa')
+        if encrypted_2fa_secret is not None:
+            return
+
+        encrypted_secret = SymmetricEncryption(password).encrypt(secret)
+
+        hashed_user_id, user_data = self[hashed_user_id]
+        user_data['e2fa'] = encrypted_secret
+        self[hashed_user_id] = user_data
+
+    def get_2fa_secret(self, user_id: str, password: str) -> Optional[str]:
+        hashed_user_id, user_data = self[user_id]
+        if None in [hashed_user_id, user_data]:
+            return None
+
+        encrypted_2fa_secret = user_data.get('e2fa')
+        if encrypted_2fa_secret is not None:
+            return None
+
+        decrypted_secret = SymmetricEncryption(password).decrypt(encrypted_2fa_secret)
+        return decrypted_secret
+
     def is_password_correct(self, user_id: str, password_inp: str,
                             encrypted_fields: Optional[list] = None) -> bool:
-        user = self[user_id]
-        if user is None:
-            return False
+        hashed_user_id, user_data = self[user_id]
+        if None in [hashed_user_id, user_data]:
+            return None
 
-        hashed_password = user.get('hpwd')
+        hashed_password = user_data.get('hpwd')
         if hashed_password is not None:
             return Hashing(iterations = 150000).compare(password_inp, hashed_password)
 
-        user_data: dict = user.get('data')
-        if None in [encrypted_fields, user_data]:
+        encrypted_user_data: dict = user_data.get('data')
+        if None in [encrypted_fields, encrypted_user_data]:
             return False
 
-        for key, value in user_data.items():
+        for key, value in encrypted_user_data.items():
             if key not in encrypted_fields:
                 continue
 
@@ -215,26 +244,26 @@ class UserSystem(dict):
     def add_failed_attempt(self, user_id: str) -> None:
         self._clean_failed_attempts()
 
-        user = self[user_id]
-        if user is None:
+        hashed_user_id, user_data = self[user_id]
+        if None in [hashed_user_id, user_data]:
             return
 
-        failed_attempts: list = user.get('failed', [])
+        failed_attempts: list = user_data.get('failed', [])
         failed_attempts = [time()] + failed_attempts
         failed_attempts = failed_attempts[:4]
 
-        user = self[user_id]
-        user['failed'] = failed_attempts
-        self[user_id] = user
+        hashed_user_id, user_data = self[user_id]
+        user_data['failed'] = failed_attempts
+        self[hashed_user_id] = user_data
 
     def should_captcha_be_used(self, user_id: str) -> bool:
         self._clean_failed_attempts()
 
-        user = self[user_id]
-        if user is None:
+        hashed_user_id, user_data = self[user_id]
+        if None in [hashed_user_id, user_data]:
             return
 
-        failed_attempts: list = user.get('failed', [])
+        failed_attempts: list = user_data.get('failed', [])
         return len(failed_attempts) >= 2
 
     ###############
@@ -246,11 +275,11 @@ class UserSystem(dict):
     def get_session(self, user_id: str, session_id: Optional[str] = None,
                     session_token: Optional[str] = None,
                     password: Optional[str] = None) -> Optional[dict]:
-        user = self[user_id]
-        if user is None:
+        hashed_user_id, user_data = self[user_id]
+        if None in [hashed_user_id, user_data]:
             return None
 
-        user_sessions: dict = user.get('sessions', {})
+        user_sessions: dict = user_data.get('sessions', {})
 
         session_data = None
 
@@ -305,8 +334,8 @@ class UserSystem(dict):
         if not isinstance(data, dict):
             data = {}
 
-        user = self[user_id]
-        if user is None:
+        hashed_user_id, user_data = self[user_id]
+        if None in [hashed_user_id, user_data]:
             return None
 
         session = {}
@@ -333,25 +362,25 @@ class UserSystem(dict):
             encrypted_session_id = SymmetricEncryption(session_token).encrypt(session_id)
             session['eid'] = encrypted_session_id
 
-            user = self[user_id]
-            if user is None:
+            hashed_user_id, user_data = self[user_id]
+            if None in [hashed_user_id, user_data]:
                 return None
 
-            user_sessions: dict = user.get('sessions', {})
+            user_sessions: dict = user_data.get('sessions', {})
 
             hashed_session_id = Hashing().hash(session_id)
             while any(session_id == hashed_session_id for session_id in list(user_sessions.keys())):
                 hashed_session_id = Hashing().hash(session_id)
 
-            user = self[user_id]
-            if user is None:
+            hashed_user_id, user_data = self[user_id]
+            if None in [hashed_user_id, user_data]:
                 return None
 
-            user_sessions = user.get('sessions', {})
+            user_sessions = user_data.get('sessions', {})
             user_sessions[hashed_session_id] = session
-            user['sessions'] = user_sessions
+            user_data['sessions'] = user_sessions
 
-            self[user_id] = user_sessions
+            self[hashed_user_id] = user_data
             return session_id, session_token
         finally:
             self.reserved_session_ids.remove(session_id)

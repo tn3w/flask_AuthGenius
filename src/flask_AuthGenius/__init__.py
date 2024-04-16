@@ -109,259 +109,21 @@ class AuthGenius:
         app.before_request(self._set_client_information)
         app.before_request(self._authenticate)
 
-
-        def validate_2fa(client_request, user_data, totp,
-                           captcha_code, captcha_secret):
-            response = {"error": None, "error_fields": [], "content": {}}
-
-            language = WebPage.client_language(client_request, 'en')
-
-            dec_data = self.enc.decode(user_data)
-            if dec_data is None:
-                current_url = get_url_from_request(request)
-                current_url_without_args = remove_args_from_url(current_url)
-                current_args = current_url.replace(current_url_without_args, "")
-
-                response['content']['redirection_url'] = '/login' + current_args
-                return response
-
-            language = WebPage.client_language(request, 'en')
-
-            new_failed_accounts = self.failed_accounts.copy()
-            for account_id, account_failed in self.failed_accounts.items():
-                new_account_failed = []
-                for failed_time in account_failed:
-                    if int(time() - failed_time) <= 3600:
-                        new_account_failed.append(failed_time)
-
-                if len(new_failed_accounts) == 0:
-                    del new_failed_accounts[account_id]
-                    continue
-
-                new_failed_accounts[account_id] = new_account_failed
-
-            self.failed_accounts = new_failed_accounts
-
-            account_id = '1'
-            failed_passwords = len(self.failed_accounts.get(account_id, []))
-
-            if self.use_captchas and failed_passwords > 2:
-                failed_captcha = False
-                if not captcha_code or not captcha_secret:
-                    response['error'] = WebPage.translate_text(
-                        'Please solve the captcha.', 'en', language
-                    )
-                    failed_captcha = True
-                else:
-                    error_reason = self.captcha.verify(
-                        captcha_code, captcha_secret,
-                        {'dec_data': dec_data, 'totp': totp}
-                    )
-
-                    if error_reason == 'code':
-                        response['error'] = WebPage.translate_text(
-                            'The captcha was not correct, try again.', 'en', language
-                        )
-                        failed_captcha = True
-                    elif error_reason == 'data':
-                        response['error'] = WebPage.translate_text(
-                            'Data has changed, re-enter the captcha.', 'en', language
-                        )
-                        failed_captcha = True
-                    elif error_reason == 'time':
-                        response['error'] = WebPage.translate_text(
-                            'The captcha has expired, try again.', 'en', language
-                        )
-                        failed_captcha = True
-
-                if failed_captcha:
-                    response['error_fields'] = ['captcha']
-
-                    captcha_img, captcha_secret = self.captcha.generate(
-                        {'dec_data': dec_data, 'totp': totp}
-                    )
-
-                    response['content']['captcha_img'] = captcha_img
-                    response['content']['captcha_secret'] = captcha_secret
-                    return response
-
-            # testcreds: LDGOZS4ZCXUJ2AMORLD66FN3PVA4T3SV
-            # FIXME: Get the secret somewhere
-            if not self.totp.verify(totp, 'LDGOZS4ZCXUJ2AMORLD66FN3PVA4T3SV'):
-                failed_times = self.failed_accounts.get(account_id, [])
-                failed_times.append(time())
-                self.failed_accounts[account_id] = failed_times
-
-                response['error'] = WebPage.translate_text(
-                    'The code entered is incorrect.', 'en', language
-                )
-                return response
-
-            return None
-
         @app.route('/login', methods = ['GET', 'POST'])
         def login():
-            signature = get_random_item(SIGNATURES, 60)
-
-            return_url = '/'
-            if request.args.get('return') is not None:
-                if re.match(r'^/[^?]*\??[^?]*$', request.args.get('return')):
-                    return_url = request.args.get('return')
-
-            response = {"error": None, "error_fields": [], "content": {}}
-
-            name, password, stay = None, None, "0"
-
-            if request.method.lower() == 'post':
-                if return_url == '/' and request.form.get('return') is not None:
-                    if re.match(r'^/[^?]*\??[^?]*$', request.form.get('return')):
-                        return_url = request.form.get('return')
-
-                response = Validation.validate_login(
-                    request, self.user_system, self.captcha, self.use_captchas
-                )
-                if response is None:
-                    enc_data = self.enc.encode(
-                        {'name': name, 'password': password,
-                         'stay': stay, "return": return_url}
-                    )
-
-                    return render_template(
-                        'twofactor-app.html', request, website_logo = self.website_logo,
-                        website_name = self.website_name, data = enc_data,
-                        response = {"error": None, "error_fields": [], "content": {}}
-                    )
-
-            if not request.args.get('data') is None:
-                dec_data = self.enc.decode(request.args.get('data'))
-                if dec_data is not None:
-                    name, password, stay = dec_data.get('name'),\
-                        dec_data.get('password'), dec_data.get('stay', '0')
-
-                return_url = dec_data['return']
-
-            return render_template(
-                'login.html', request, website_logo = self.website_logo,
-                website_name = self.website_name, signature = signature,
-                return_url = return_url, response = response, name = name,
-                password = password, stay = stay
-            )
+            return self._login_route()
 
         @app.route('/login/api', methods = ['POST'])
         def login_api():
-            response = {"error": None, "error_fields": [], "content": {}}
-
-            if not request.is_json:
-                return abort(400)
-
-            data = request.get_json()
-
-            new_response = Validation.validate_login(
-                request, self.user_system, self.captcha, self.use_captchas
-            )
-
-            if new_response is not None:
-                return new_response
-
-            return_url = "/"
-            if data.get('return') is not None:
-                if re.match(r'^/[^?]*\??[^?]*$', data.get('return')):
-                    return_url = data.get('return')
-
-            name = data.get('name')
-            password = data.get('password')
-            stay = data.get('stay', '0')
-            stay = '1' if stay == '1' else '0'
-
-            enc_data = self.enc.encode(
-                {"name": name, "password": password,
-                 "stay": stay, "return": return_url}
-            )
-
-            response['content']['new_html'] = render_template(
-                'twofactor-app.html', request, website_logo = self.website_logo,
-                website_name = self.website_name, data = enc_data, response = response
-            )
-            return response
+            return self._login_api_route()
 
         @app.route('/login/2fa', methods = ['GET', 'POST'])
         def login_2fa():
-            is_invalid_data = False
-            if request.args.get('data') is None and request.form.get('data') is None:
-                is_invalid_data = True
-            else:
-                dec_data = None
-                data = None
-                if request.args.get('data') is not None:
-                    data = request.args.get('data')
-                    dec_data = self.enc.decode(request.args.get('data'))
-                if request.form.get('data') is not None and dec_data is None:
-                    data = request.form.get('data')
-                    dec_data = self.enc.decode(request.form.get('data'))
-
-                if dec_data is None:
-                    is_invalid_data = True
-
-            if is_invalid_data:
-                current_url = get_url_from_request(request)
-                current_url_without_args = remove_args_from_url(current_url)
-                current_args = current_url.replace(current_url_without_args, "")
-                return redirect('/login' + current_args)
-
-            response = {"error": None, "error_fields": [], "content": {}}
-            totp = None
-
-            if request.method.lower() == 'post':
-                user_data = request.form.get('data')
-                totp = request.form.get('totp')
-                captcha_code = request.form.get('captcha_code')
-                captcha_secret = request.form.get('captcha_secret')
-
-                response = validate_2fa(request, user_data, totp, captcha_code, captcha_secret)
-                if response is None:
-                    dec_data = self.enc.decode(user_data)
-
-                    special_char = '?' if not '?' in dec_data['return'] else '&'
-                    redirection_url = dec_data['return'] + special_char + 'session=yeah!'
-
-                    response = make_response(redirect(redirection_url))
-                    if dec_data['stay'] == '1':
-                        response.set_cookie('Session', 'yeah!', max_age = 31536000)
-                    return response
-
-            return render_template(
-                'twofactor-app.html', request, website_logo = self.website_logo,
-                website_name = self.website_name, data = data, response = response,
-                totp = totp
-            )
+            return self._login_2fa_route()
 
         @app.route('/login/2fa/api', methods = ['POST'])
         def login_2fa_api():
-            response = {"error": None, "error_fields": [], "content": {}}
-
-            if not request.is_json:
-                return abort(400)
-
-            data = request.get_json()
-
-            user_data = data.get('data')
-            totp = data.get('totp')
-            captcha_code = data.get('captcha_code')
-            captcha_secret = data.get('captcha_secret')
-
-            new_response = validate_2fa(request, user_data, totp, captcha_code, captcha_secret)
-            if new_response is not None:
-                return new_response
-
-            dec_data = self.enc.decode(user_data)
-
-            # FIXME: Create Session
-            response['content']['session'] = 'yeah!'
-            response['content']['stay'] = dec_data['stay']
-            special_char = '?' if not '?' in dec_data['return'] else '&'
-            response['content']['redirection_url'] =\
-                dec_data['return'] + special_char + 'session=yeah!'
-            return response
+            return self._login_2fa_api_route()
 
         @app.route('/login/tmp_api', methods = ['POST'])
         def template_api():
@@ -498,3 +260,174 @@ class AuthGenius:
 
             special_char = '?' if not '?' in current_args else '&'
             return redirect('/login' + current_args + special_char + 'return=' + request.path)
+
+    def _login_route(self):
+        signature = get_random_item(SIGNATURES, 60)
+
+        return_url = '/'
+        if request.args.get('return') is not None:
+            if re.match(r'^/[^?]*\??[^?]*$', request.args.get('return')):
+                return_url = request.args.get('return')
+
+        response = {"error": None, "error_fields": [], "content": {}}
+
+        name, password, stay = None, None, "0"
+
+        if request.method.lower() == 'post':
+            if return_url == '/' and request.form.get('return') is not None:
+                if re.match(r'^/[^?]*\??[^?]*$', request.form.get('return')):
+                    return_url = request.form.get('return')
+
+            name = request.form.get('name')
+            password = request.form.get('password')
+            stay = request.form.get('stay', '0')
+            stay = '1' if stay == '1' else '0'
+
+            response = Validation.validate_login(
+                request, self.user_system, self.captcha, self.use_captchas
+            )
+            if response is None:
+                enc_data = self.enc.encode(
+                    {'name': name, 'password': password,
+                     'stay': stay, "return": return_url}
+                )
+
+                return render_template(
+                    'twofactor-app.html', request, website_logo = self.website_logo,
+                    website_name = self.website_name, data = enc_data,
+                    response = {"error": None, "error_fields": [], "content": {}}
+                )
+
+        if not request.args.get('data') is None:
+            dec_data = self.enc.decode(request.args.get('data'))
+            if dec_data is not None:
+                name, password, stay = dec_data.get('name'),\
+                    dec_data.get('password'), dec_data.get('stay', '0')
+
+            return_url = dec_data['return']
+
+        return render_template(
+            'login.html', request, website_logo = self.website_logo,
+            website_name = self.website_name, signature = signature,
+            return_url = return_url, response = response, name = name,
+            password = password, stay = stay
+        )
+
+    def _login_api_route(self):
+        response = {"error": None, "error_fields": [], "content": {}}
+
+        if not request.is_json:
+            return abort(400)
+        if not isinstance(request.get_json(), dict):
+            return abort(400)
+
+        data = request.get_json()
+
+        new_response = Validation.validate_login(
+            request, self.user_system, self.captcha, self.use_captchas
+        )
+
+        if new_response is not None:
+            return new_response
+
+        return_url = "/"
+        if data.get('return') is not None:
+            if re.match(r'^/[^?]*\??[^?]*$', data.get('return')):
+                return_url = data.get('return')
+
+        name = data.get('name')
+        password = data.get('password')
+        stay = data.get('stay', '0')
+        stay = '1' if stay == '1' else '0'
+
+        enc_data = self.enc.encode(
+            {"name": name, "password": password,
+             "stay": stay, "return": return_url}
+        )
+
+        response['content']['new_html'] = render_template(
+            'twofactor-app.html', request, website_logo = self.website_logo,
+            website_name = self.website_name, data = enc_data, response = response
+        )
+        return response
+
+    def _login_2fa_route(self):
+        is_invalid_data = False
+        if request.args.get('data') is None and request.form.get('data') is None:
+            is_invalid_data = True
+        else:
+            dec_data = None
+            data = None
+            if request.args.get('data') is not None:
+                data = request.args.get('data')
+                dec_data = self.enc.decode(request.args.get('data'))
+            if request.form.get('data') is not None and dec_data is None:
+                data = request.form.get('data')
+                dec_data = self.enc.decode(request.form.get('data'))
+
+            if dec_data is None:
+                is_invalid_data = True
+
+        if is_invalid_data:
+            current_url = get_url_from_request(request)
+            current_url_without_args = remove_args_from_url(current_url)
+            current_args = current_url.replace(current_url_without_args, "")
+            return redirect('/login' + current_args)
+
+        response = {"error": None, "error_fields": [], "content": {}}
+        totp = None
+
+        if request.method.lower() == 'post':
+            user_data = request.form.get('data')
+            totp = request.form.get('totp')
+
+            response = Validation.validate_login_2fa(
+                request, self.user_system, self.captcha, self.enc,
+                self.totp, self.use_captchas
+            )
+
+            if response is None:
+                dec_data = self.enc.decode(user_data)
+
+                # FIXME: Create Session
+                special_char = '?' if not '?' in dec_data['return'] else '&'
+                redirection_url = dec_data['return'] + special_char + 'session=yeah!'
+
+                response = make_response(redirect(redirection_url))
+                if dec_data['stay'] == '1':
+                    response.set_cookie('Session', 'yeah!', max_age = 31536000)
+                return response
+
+        return render_template(
+            'twofactor-app.html', request, website_logo = self.website_logo,
+            website_name = self.website_name, data = data, response = response,
+            totp = totp
+        )
+
+    def _login_2fa_api_route(self):
+        response = {"error": None, "error_fields": [], "content": {}}
+
+        if not request.is_json:
+            return abort(400)
+        if not isinstance(request.get_json(), dict):
+            return abort(400)
+
+        data: dict = request.get_json()
+        user_data = data.get('data')
+
+        new_response = Validation.validate_login_2fa(
+            request, self.user_system, self.captcha, self.enc,
+            self.totp, self.use_captchas
+        )
+        if new_response is not None:
+            return new_response
+
+        dec_data = self.enc.decode(user_data)
+
+        # FIXME: Create Session
+        response['content']['session'] = 'yeah!'
+        response['content']['stay'] = dec_data['stay']
+        special_char = '?' if not '?' in dec_data['return'] else '&'
+        response['content']['redirection_url'] =\
+            dec_data['return'] + special_char + 'session=yeah!'
+        return response
