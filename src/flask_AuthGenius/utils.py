@@ -8,7 +8,6 @@ import json
 from time import time
 import ipaddress
 from typing import Optional, Union, Tuple
-from base64 import b64encode, b64decode, urlsafe_b64encode, urlsafe_b64decode
 import mimetypes
 import imghdr
 from io import BytesIO
@@ -95,7 +94,11 @@ def get_scheme(request: Request) -> str:
     return scheme
 
 
-def is_valid_url(url):
+def is_email(text: str) -> bool:
+    return re.match(r'^[\w\.-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$', text)
+
+
+def is_valid_url(url) -> bool:
     """
     Check if a given URL is valid.
 
@@ -195,9 +198,8 @@ def convert_image_to_base64(file_path: str) -> Optional[str]:
     if not os.path.isfile(file_path):
         return
 
-    #try:
     with open(file_path, 'rb') as image_file:
-        encoded_image = b64encode(image_file.read()).decode('utf-8')
+        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
         mime_type, _ = mimetypes.guess_type(file_path)
         if not mime_type:
@@ -206,8 +208,6 @@ def convert_image_to_base64(file_path: str) -> Optional[str]:
         data_url = f'data:{mime_type};base64,{encoded_image}'
 
         return data_url
-    #except Exception as e:
-        #error("Error loading image file or converting to Base64 format: " + str(e))
 
 
 def generate_website_logo(name: str) -> str:
@@ -241,7 +241,7 @@ def generate_website_logo(name: str) -> str:
     image_buffer = BytesIO()
     image.save(image_buffer, format="PNG")
 
-    image_base64 = b64encode(image_buffer.getvalue()).decode("utf-8")
+    image_base64 = base64.b64encode(image_buffer.getvalue()).decode("utf-8")
     return "data:image/png;base64," + image_base64
 
 
@@ -476,33 +476,6 @@ def get_ip_info(ip_address: str) -> dict:
     return None
 
 
-def derive_password(
-        password: str, salt: Optional[bytes] = None
-        ) -> Tuple[str, bytes]:
-    """
-    Derives a secure password hash using PBKDF2-HMAC algorithm.
-
-    :param password: The input password to be hashed.
-    :param salt: (Optional) A random byte string used as a salt.
-                 If not provided, a 32-byte random salt will be generated.
-    """
-
-    if salt is None:
-        salt = secrets.token_bytes(32)
-
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        iterations=100000,
-        salt=salt,
-        length=48
-    )
-
-    key = kdf.derive(password.encode())
-    hashed_password = b64encode(key).decode('utf-8')
-
-    return hashed_password, salt
-
-
 def is_valid_image(image_data: bytes) -> bool:
     """
     Checks the validity of the given image data.
@@ -631,6 +604,7 @@ class Hashing:
         self.salt = salt
         self.without_salt = without_salt
         self.iterations = iterations
+        self.urlsafe = urlsafe
         self.encoding = base64.b64encode if not urlsafe else base64.urlsafe_b64encode
         self.decoding = base64.b64decode if not urlsafe else base64.urlsafe_b64decode
 
@@ -696,9 +670,9 @@ class Hashing:
 
         hash_length = len(self.decoding(hashed_value))
 
-        comparison_hash = self.hash(
-            plain_text, hash_length = hash_length
-        ).split("//")[0]
+        comparison_hash = Hashing(
+            salt, self.without_salt, self.iterations, self.urlsafe)\
+                .hash(plain_text, hash_length = hash_length).split("//")[0]
 
         return comparison_hash == hashed_value
 
@@ -746,7 +720,7 @@ class SymmetricEncryption:
         padded_data = padder.update(plain_text.encode()) + padder.finalize()
         ciphertext = encryptor.update(padded_data) + encryptor.finalize()
 
-        return urlsafe_b64encode(salt + iv + ciphertext).decode()
+        return base64.urlsafe_b64encode(salt + iv + ciphertext).decode()
 
     def decrypt(self, cipher_text: str) -> Optional[str]:
         """
@@ -756,7 +730,7 @@ class SymmetricEncryption:
         """
 
         try:
-            cipher_text = urlsafe_b64decode(cipher_text.encode())
+            cipher_text = base64.urlsafe_b64decode(cipher_text.encode())
 
             salt, iv, cipher_text = cipher_text[:self.salt_length],\
                 cipher_text[self.salt_length:self.salt_length + 16],\
@@ -776,9 +750,8 @@ class SymmetricEncryption:
             unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
             decrypted_data = decryptor.update(cipher_text) + decryptor.finalize()
             plaintext = unpadder.update(decrypted_data) + unpadder.finalize()
-        except (InvalidKey, InvalidTag,
-                UnsupportedAlgorithm,
-                AlreadyFinalized):
+        except (InvalidKey, InvalidTag, ValueError,
+                UnsupportedAlgorithm, AlreadyFinalized):
             return None
 
         return plaintext.decode()
@@ -818,6 +791,9 @@ class SymmetricData:
         """
 
         decrypted_data = self.sym_enc.decrypt(text)
+        if decrypted_data is None:
+            return None
+
         return json.loads(decrypted_data)
 
 
@@ -1280,7 +1256,7 @@ class Captcha:
         image_captcha = ImageCaptcha(width=480, height=120, fonts=FONTS)
 
         captcha_image = image_captcha.generate(image_captcha_code)
-        captcha_image_data = b64encode(captcha_image.getvalue()).decode('utf-8')
+        captcha_image_data = base64.b64encode(captcha_image.getvalue()).decode('utf-8')
         captcha_image_data = "data:image/png;base64," + captcha_image_data
 
         return captcha_image_data, crypted_captcha_prove
@@ -1330,15 +1306,15 @@ class TOTP:
 
         new_used_codes = self.used_codes.copy()
         for secret, used_codes in self.used_codes.items():
-            new_used_codes = []
+            new_codes = []
             for used_code, use_time in used_codes:
                 if int(time() - use_time) <= 30:
-                    new_used_codes.append((used_code, use_time))
+                    new_codes.append((used_code, use_time))
 
-            if len(new_used_codes) == 0:
+            if len(new_codes) == 0:
                 del new_used_codes[secret]
             else:
-                new_used_codes[secret] = new_used_codes
+                new_used_codes[secret] = new_codes
 
         self.used_codes = new_used_codes
 
@@ -1355,7 +1331,7 @@ class TOTP:
         hashed_secret = Hashing().hash(secret)
         hashed_code = Hashing().hash(used_code)
 
-        used_codes = self.used_codes.get(hashed_secret, [])
+        used_codes: list = self.used_codes.get(hashed_secret, [])
         used_codes.append((hashed_code, time()))
         self.used_codes[hashed_secret] = used_codes
 
@@ -1401,7 +1377,7 @@ class TOTP:
         img_bytes = io.BytesIO()
         img.save(img_bytes, format='PNG')
         img_data = img_bytes.getvalue()
-        base64_img = b64encode(img_data).decode('utf-8')
+        base64_img = base64.b64encode(img_data).decode('utf-8')
 
         return secret, 'data:image/png;base64,' + base64_img
 
@@ -1439,6 +1415,7 @@ class User:
         language: Optional[str] = None, theme: Optional[str] = None,
         ip_address: Optional[str] = None, user_agent: Optional[str] = None,
         encrypted_fields: Optional[list] = None, hashed_fieds: Optional[list] = None) -> dict:
+        return NotImplementedError('User.create is replaced by auth.UserSystem().create_user')
         """
         Creates a new user with the provided information.
 

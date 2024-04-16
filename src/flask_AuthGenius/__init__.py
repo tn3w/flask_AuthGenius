@@ -7,7 +7,8 @@ from flask import Flask, g, request, redirect, make_response, abort
 from .utils import JSON, error, convert_image_to_base64, generate_website_logo, is_current_route,\
                    get_client_ip, get_ip_info, render_template, get_random_item, get_url_from_request,\
                    remove_args_from_url, Captcha, generate_random_string, WebPage, SymmetricData, TOTP
-
+from .auth import UserSystem
+from .validation import Validation
 
 try:
     CURRENT_DIR_PATH = pkg_resources.resource_filename('flask_AuthGenius', '')
@@ -79,6 +80,7 @@ class AuthGenius:
         self.website_name = website_name
         self.use_captchas = use_captchas
         self.totp = TOTP()
+        self.user_system = UserSystem()
         self.enc = SymmetricData(generate_random_string(30))
 
         if use_captchas:
@@ -107,105 +109,6 @@ class AuthGenius:
         app.before_request(self._set_client_information)
         app.before_request(self._authenticate)
 
-        def validate_login(client_request, name, password,
-                           captcha_code, captcha_secret) -> Optional[dict]:
-            response = {"error": None, "error_fields": [], "content": {}}
-
-            language = WebPage.client_language(client_request, 'en')
-
-            if not name or not password:
-                response['error'] = WebPage.translate_text(
-                    'Please fill in all fields.', 'en', language
-                )
-                error_fields = []
-                if name is None and not password is None:
-                    error_fields.append('name')
-                elif password is None and not name is None:
-                    error_fields.append('password')
-                response['error_fields'] = error_fields
-                return response
-
-            # testcreds: tn3w / tn3w@duck.com + password: HelloWorld1234
-            # FIXME: Proper user system
-            if name not in ['tn3w', 'tn3w@duck.com']:
-                response['error'] = WebPage.translate_text(
-                    'The username / email was not found.', 'en', language
-                )
-                response['error_fields'] = ['name']
-                return response
-
-            new_failed_accounts = self.failed_accounts.copy()
-            for account_id, account_failed in self.failed_accounts.items():
-                new_account_failed = []
-                for failed_time in account_failed:
-                    if int(time() - failed_time) <= 3600:
-                        new_account_failed.append(failed_time)
-
-                if len(new_failed_accounts) == 0:
-                    del new_failed_accounts[account_id]
-                    continue
-
-                new_failed_accounts[account_id] = new_account_failed
-
-            self.failed_accounts = new_failed_accounts
-
-            account_id = '1'
-            failed_passwords = len(self.failed_accounts.get(account_id, []))
-
-            if self.use_captchas and failed_passwords > 2:
-                failed_captcha = False
-                if not captcha_code or not captcha_secret:
-                    response['error'] = WebPage.translate_text(
-                        'Please solve the captcha.', 'en', language
-                    )
-                    failed_captcha = True
-                else:
-                    error_reason = self.captcha.verify(
-                        captcha_code, captcha_secret,
-                        {'name': name, 'password': password}
-                    )
-
-                    if error_reason == 'code':
-                        response['error'] = WebPage.translate_text(
-                            'The captcha was not correct, try again.', 'en', language
-                        )
-                        failed_captcha = True
-                    elif error_reason == 'data':
-                        response['error'] = WebPage.translate_text(
-                            'Data has changed, re-enter the captcha.', 'en', language
-                        )
-                        failed_captcha = True
-                    elif error_reason == 'time':
-                        response['error'] = WebPage.translate_text(
-                            'The captcha has expired, try again.', 'en', language
-                        )
-                        failed_captcha = True
-
-                if failed_captcha:
-                    response['error_fields'] = ['captcha']
-
-                    captcha_img, captcha_secret = self.captcha.generate(
-                        {'name': name, 'password': password}
-                    )
-
-                    response['content']['captcha_img'] = captcha_img
-                    response['content']['captcha_secret'] = captcha_secret
-                    return response
-
-            # testcreds: tn3w / tn3w@duck.com + password: HelloWorld1234
-            # FIXME: Proper password system
-            if password != 'HelloWorld1234':
-                failed_times = self.failed_accounts.get(account_id, [])
-                failed_times.append(time())
-                self.failed_accounts[account_id] = failed_times
-
-                response['error'] = WebPage.translate_text(
-                    'The password is not correct.', 'en', language
-                )
-                response['error_fields'] = ['password']
-                return response
-
-            return None
 
         def validate_2fa(client_request, user_data, totp,
                            captcha_code, captcha_secret):
@@ -310,18 +213,13 @@ class AuthGenius:
             name, password, stay = None, None, "0"
 
             if request.method.lower() == 'post':
-                name = request.form.get('name')
-                password = request.form.get('password')
-                stay = request.form.get('stay', '0')
-                stay = '1' if stay == '1' else '0'
-                captcha_code = request.form.get('captcha_code')
-                captcha_secret = request.form.get('captcha_secret')
-
                 if return_url == '/' and request.form.get('return') is not None:
                     if re.match(r'^/[^?]*\??[^?]*$', request.form.get('return')):
                         return_url = request.form.get('return')
 
-                response = validate_login(request, name, password, captcha_code, captcha_secret)
+                response = Validation.validate_login(
+                    request, self.user_system, self.captcha, self.use_captchas
+                )
                 if response is None:
                     enc_data = self.enc.encode(
                         {'name': name, 'password': password,
@@ -340,7 +238,6 @@ class AuthGenius:
                     name, password, stay = dec_data.get('name'),\
                         dec_data.get('password'), dec_data.get('stay', '0')
 
-                print(dec_data)
                 return_url = dec_data['return']
 
             return render_template(
@@ -359,14 +256,9 @@ class AuthGenius:
 
             data = request.get_json()
 
-            name = data.get('name')
-            password = data.get('password')
-            stay = data.get('stay', '0')
-            stay = '1' if stay == '1' else '0'
-            captcha_code = data.get('captcha_code')
-            captcha_secret = data.get('captcha_secret')
-
-            new_response = validate_login(request, name, password, captcha_code, captcha_secret)
+            new_response = Validation.validate_login(
+                request, self.user_system, self.captcha, self.use_captchas
+            )
 
             if new_response is not None:
                 return new_response
@@ -375,6 +267,11 @@ class AuthGenius:
             if data.get('return') is not None:
                 if re.match(r'^/[^?]*\??[^?]*$', data.get('return')):
                     return_url = data.get('return')
+
+            name = data.get('name')
+            password = data.get('password')
+            stay = data.get('stay', '0')
+            stay = '1' if stay == '1' else '0'
 
             enc_data = self.enc.encode(
                 {"name": name, "password": password,

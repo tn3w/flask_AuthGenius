@@ -1,10 +1,9 @@
 import os
 from threading import Thread
-from typing import Optional, Tuple, Any
 from time import time
+from typing import Optional, Tuple, Any
 from pkg_resources import resource_filename
-from werkzeug import Request
-from .utils import WebPage, JSON, Hashing, SymmetricEncryption, generate_random_string
+from .utils import JSON, Hashing, SymmetricEncryption, generate_random_string
 
 
 try:
@@ -14,7 +13,8 @@ except ModuleNotFoundError:
 
 DATA_DIR_PATH = os.path.join(CURRENT_DIR_PATH, 'data')
 
-class User(dict):
+
+class UserSystem(dict):
 
     def __init__(self, users_file_path: Optional[str] = None) -> None:
         if users_file_path is None:
@@ -43,7 +43,7 @@ class User(dict):
 
     def __getitem__(self, user_id: str) -> Optional[dict]:
         for index in range(2):
-            for hashed_user_id, user_data in self.users:
+            for hashed_user_id, user_data in self.users.items():
                 if user_id == hashed_user_id:
                     return user_data
 
@@ -53,17 +53,118 @@ class User(dict):
 
         return None
 
-    def get(self, user_id: Optional[str] = None,
-            user_name: Optional[str] = None,
-            user_email: Optional[str] = None) -> dict:
+    ############
+    ### User ###
+    ############
 
-        raise NotImplementedError()
+    def create_user(self, password: str, user_name: Optional[str] = None,
+               user_email: Optional[str] = None,
+               other_user_data: Optional[dict] = None,
+               encrypted_fields: Optional[list] = None) -> str:
 
-        # FIXME: Implemention
+        if other_user_data is None:
+            other_user_data = {}
+        if encrypted_fields is None:
+            encrypted_fields = []
 
-        if not user_id is None:
-            for hashed_user_id, user_data in self.users:
-                ...
+        user = {}
+
+        hashed_password = Hashing(iterations = 150000).hash(password)
+        user['hpwd'] = hashed_password
+
+        if not user_name is None:
+            user['hname'] = Hashing().hash(user_name)
+            other_user_data['name'] = user_name
+        if not user_email is None:
+            user['hemail'] = Hashing().hash(user_email)
+            other_user_data['email'] = user_email
+
+        encryptor = SymmetricEncryption(password).encrypt
+
+        user_data = {}
+        for key, value in other_user_data.items():
+            if key in encrypted_fields:
+                value = encryptor(value)
+            user_data[key] = value
+
+        user['data'] = user_data
+
+        user_id = generate_random_string(12, False)
+        while self[user_id] is not None or user_id in self.reserved_user_ids:
+            user_id = generate_random_string(12, False)
+
+        self.reserved_user_ids.append(user_id)
+
+        try:
+            hashed_user_id = Hashing().hash(user_id)
+            while any(user_id == hashed_user_id for user_id in list(self.users.keys())):
+                hashed_user_id = Hashing().hash(user_id)
+
+            self[hashed_user_id] = user
+            return user_id
+        finally:
+            self.reserved_user_ids.remove(user_id)
+
+    def get_user(self, user_id: Optional[str] = None,
+                 user_name: Optional[str] = None,
+                 user_email: Optional[str] = None,
+                 password: Optional[str] = None,
+                 encrypted_fields: Optional[list] = None,
+                 return_id: bool = False) -> Optional[dict]:
+
+        user = None
+
+        if user_id is not None:
+            user = self[user_id]
+
+            if user is not None and return_id:
+                user['id'] = user_id
+
+        if user is None and user_name is not None:
+            for hashed_user_id, user_data in self.users.items():
+                hashed_name = user_data.get('hname')
+                if hashed_name is None:
+                    continue
+
+                if Hashing().compare(user_name, hashed_name):
+                    user = user_data
+
+                    if return_id:
+                        user['hid'] = hashed_user_id
+
+        if user is None and user_email is not None:
+            for hashed_user_id, user_data in self.users.items():
+                hashed_email = user_data.get('hemail')
+                if hashed_email is None:
+                    continue
+
+                if Hashing().compare(user_email, hashed_email):
+                    user = user_data
+
+                    if return_id:
+                        user['hid'] = hashed_user_id
+
+        if None in [password, encrypted_fields, user]:
+            return user
+
+        encrypted_user_data = user.get('data', {})
+        if not isinstance(encrypted_user_data, dict) or len(encrypted_user_data) == 0:
+            return user
+
+        decryptor = SymmetricEncryption(password).decrypt
+
+        decrypted_data = {}
+        for key, value in encrypted_user_data.items():
+            if key in encrypted_fields and value is not None:
+                value = decryptor(value)
+
+                if value is None:
+                    return None
+
+            decrypted_data[key] = value
+
+        user['data'] = decrypted_data
+        return user
 
     def is_password_correct(self, user_id: str, password_inp: str,
                             encrypted_fields: Optional[list] = None) -> bool:
@@ -90,51 +191,55 @@ class User(dict):
 
         return False
 
-    def create(self, password: str, user_name: Optional[str] = None,
-               user_email: Optional[str] = None,
-               other_user_data: Optional[dict] = None,
-               encrypted_fields: Optional[list] = None) -> str:
+    ############################
+    ### User Failed Attempts ###
+    ############################
 
-        if other_user_data is None:
-            other_user_data = {}
-        if encrypted_fields is None:
-            encrypted_fields = []
+    def _clean_failed_attempts(self) -> None:
+        new_users = {}
+        for hashed_user_id, user_data in self.users.items():
+            failed_attempts = user_data.get('failed')
+            if failed_attempts is not None:
+                new_failed_attempts = []
+                for failed_attempt_time in failed_attempts:
+                    if int(time() - failed_attempt_time) <= 7200:
+                        new_failed_attempts.append(failed_attempt_time)
 
-        user = {}
+                if len(new_failed_attempts) == 0:
+                    del user_data['failed']
+                else:
+                    user_data['failed'] = new_failed_attempts
 
-        hashed_password = Hashing(iterations = 150000).hash(password)
-        user['hpwd'] = hashed_password
+            new_users[hashed_user_id] = user_data
 
-        if not user_name is None:
-            user['name'] = Hashing().hash(user_name)
-            other_user_data['name'] = user_name
-        if not user_email is None:
-            user['email'] = Hashing().hash(user_email)
-            other_user_data['email'] = user_email
+    def add_failed_attempt(self, user_id: str) -> None:
+        self._clean_failed_attempts()
 
-        encryptor = SymmetricEncryption(password).encrypt
+        user = self[user_id]
+        if user is None:
+            return
 
-        user_data = {}
-        for key, value in other_user_data.items():
-            if key in encrypted_fields:
-                value = encryptor(value)
-            user_data[key] = value
+        failed_attempts: list = user.get('failed', [])
+        failed_attempts = [time()] + failed_attempts
+        failed_attempts = failed_attempts[:4]
 
-        user['data'] = user_data
+        user = self[user_id]
+        user['failed'] = failed_attempts
+        self[user_id] = user
 
-        user_id = generate_random_string(12, False)
-        while self[user_id] is not None or user_id in self.reserved_user_ids:
-            user_id = generate_random_string(12, False)
+    def should_captcha_be_used(self, user_id: str) -> bool:
+        self._clean_failed_attempts()
 
-        self.reserved_user_ids.append(user_id)
+        user = self[user_id]
+        if user is None:
+            return
 
-        try:
-            hashed_user_id = Hashing().hash(user_id)
+        failed_attempts: list = user.get('failed', [])
+        return len(failed_attempts) >= 2
 
-            self[hashed_user_id] = user
-            return user_id
-        finally:
-            self.reserved_user_ids.remove(user_id)
+    ###############
+    ### Session ###
+    ###############
 
     # FIXME: Sessions must be deleted after a while
 
@@ -250,117 +355,3 @@ class User(dict):
             return session_id, session_token
         finally:
             self.reserved_session_ids.remove(session_id)
-
-class Validation:
-
-    @staticmethod
-    def validate_login(request: Request) -> Optional[dict]:
-        data = request.form
-        if request.is_json and request.method.lower() == 'post':
-            data = request.get_json()
-
-        name = data.get('name')
-        password = data.get('password')
-        captcha_code = data.get('captcha_code')
-        captcha_secret = data.get('captcha_secret')
-
-        stay = data.get('stay', '0')
-        stay = '1' if stay == '1' else '0'
-
-        response = {"error": None, "error_fields": [], "content": {}}
-
-        language = WebPage.client_language(request, 'en')
-
-        if not name or not password:
-            response['error'] = WebPage.translate_text(
-                'Please fill in all fields.', 'en', language
-            )
-            error_fields = []
-            if name is None and not password is None:
-                error_fields.append('name')
-            elif password is None and not name is None:
-                error_fields.append('password')
-            response['error_fields'] = error_fields
-            return response
-
-        # testcreds: tn3w / tn3w@duck.com + password: HelloWorld1234
-        # FIXME: Proper user system
-        if name not in ['tn3w', 'tn3w@duck.com']:
-            response['error'] = WebPage.translate_text(
-                'The username / email was not found.', 'en', language
-            )
-            response['error_fields'] = ['name']
-            return response
-
-        new_failed_accounts = self.failed_accounts.copy()
-        for account_id, account_failed in self.failed_accounts.items():
-            new_account_failed = []
-            for failed_time in account_failed:
-                if int(time() - failed_time) <= 3600:
-                    new_account_failed.append(failed_time)
-
-            if len(new_failed_accounts) == 0:
-                del new_failed_accounts[account_id]
-                continue
-
-            new_failed_accounts[account_id] = new_account_failed
-
-        self.failed_accounts = new_failed_accounts
-
-        account_id = '1'
-        failed_passwords = len(self.failed_accounts.get(account_id, []))
-
-        if self.use_captchas and failed_passwords > 2:
-            failed_captcha = False
-            if not captcha_code or not captcha_secret:
-                response['error'] = WebPage.translate_text(
-                    'Please solve the captcha.', 'en', language
-                )
-                failed_captcha = True
-            else:
-                error_reason = self.captcha.verify(
-                    captcha_code, captcha_secret,
-                    {'name': name, 'password': password}
-                )
-
-                if error_reason == 'code':
-                    response['error'] = WebPage.translate_text(
-                        'The captcha was not correct, try again.', 'en', language
-                    )
-                    failed_captcha = True
-                elif error_reason == 'data':
-                    response['error'] = WebPage.translate_text(
-                        'Data has changed, re-enter the captcha.', 'en', language
-                    )
-                    failed_captcha = True
-                elif error_reason == 'time':
-                    response['error'] = WebPage.translate_text(
-                        'The captcha has expired, try again.', 'en', language
-                    )
-                    failed_captcha = True
-
-            if failed_captcha:
-                response['error_fields'] = ['captcha']
-
-                captcha_img, captcha_secret = self.captcha.generate(
-                    {'name': name, 'password': password}
-                )
-
-                response['content']['captcha_img'] = captcha_img
-                response['content']['captcha_secret'] = captcha_secret
-                return response
-
-        # testcreds: tn3w / tn3w@duck.com + password: HelloWorld1234
-        # FIXME: Proper password system
-        if password != 'HelloWorld1234':
-            failed_times = self.failed_accounts.get(account_id, [])
-            failed_times.append(time())
-            self.failed_accounts[account_id] = failed_times
-
-            response['error'] = WebPage.translate_text(
-                'The password is not correct.', 'en', language
-            )
-            response['error_fields'] = ['password']
-            return response
-
-        return None
