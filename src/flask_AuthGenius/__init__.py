@@ -6,7 +6,8 @@ from typing import Optional, Tuple
 from flask import Flask, g, request, redirect, make_response, abort
 from .utils import JSON, error, convert_image_to_base64, generate_website_logo, is_current_route,\
                    get_client_ip, get_ip_info, render_template, get_random_item, get_url_from_request,\
-                   remove_args_from_url, Captcha, generate_random_string, SymmetricData, TOTP, WebPage
+                   remove_args_from_url, Captcha, generate_random_string, SymmetricData, TOTP,\
+                   generate_random_profile_picture
 from .auth import UserSystem
 from .validation import Validation
 
@@ -112,6 +113,7 @@ class AuthGenius:
         app.before_request(self._set_client_information)
         app.before_request(self._authenticate)
 
+        # Login
         @app.route('/login', methods = ['GET', 'POST'])
         def login():
             return self._login_route()
@@ -128,6 +130,12 @@ class AuthGenius:
         def login_2fa_api():
             return self._login_2fa_api_route()
 
+        # Register
+        @app.route('/register', methods = ['GET', 'POST'])
+        def register():
+            return self._register_route()
+
+        @app.route('/register/tmp_api', methods = ['POST'])
         @app.route('/login/tmp_api', methods = ['POST'])
         def template_api():
             response = {"error": None, "error_fields": [], "content": {}}
@@ -144,7 +152,9 @@ class AuthGenius:
 
     @property
     def _need_authentication(self) -> bool:
-        "Whether authorization is required on the current route"
+        """
+        Whether authorization is required on the current route
+        """
 
         # FIXME: Session check
         if request.cookies.get('Session') == 'yeah!' or request.args.get('session') == 'yeah!':
@@ -165,7 +175,9 @@ class AuthGenius:
 
     @property
     def _add_popup(self) -> bool:
-        "Whether a pop-up window should be inserted on the current page"
+        """
+        Whether a pop-up window should be inserted on the current page
+        """
 
         if self._need_authentication:
             return False
@@ -173,16 +185,6 @@ class AuthGenius:
         for route in self.popup_routes:
             if is_current_route(request, route):
                 return True
-        return False
-
-
-    @property
-    def _is_own_page(self) -> bool:
-        "Whether the current page is a page of flask_AuthGenius"
-
-        is_own_page = hasattr(g, "authgenius_site", False)
-        if isinstance(is_own_page, bool):
-            return is_own_page
         return False
 
 
@@ -620,3 +622,19 @@ class AuthGenius:
         response['content']['redirection_url'] = decrypted_data['return'] +\
                                  special_char + 'session=' + session_text
         return response
+
+    def _register_route(self):
+        return_url = '/'
+        if request.args.get('return') is not None:
+            if re.match(r'^/[^?]*\??[^?]*$', request.args.get('return')):
+                return_url = request.args.get('return')
+
+        random_profile_picture, random_profile_picture_index = generate_random_profile_picture()
+
+        return render_template(
+            'register.html', request, website_logo = self.website_logo,
+            website_name = self.website_name, response =\
+                {"error": None, "error_fields": [], "content": {}},
+            profile_picture = 'data:image/png;base64,' + random_profile_picture,
+            return_url = return_url
+        )

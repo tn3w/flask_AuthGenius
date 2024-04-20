@@ -246,14 +246,17 @@ def generate_website_logo(name: str) -> str:
 
 
 def generate_random_profile_picture() -> Tuple[str, int]:
-    "Generates a random profile picture and its index by loading a list of profile pictures"
+    """
+    Generates a random profile picture and its index
+    by loading a list of profile pictures
+    """
 
     profile_pictures = JSON.load(PROFILE_PICTURES_PATH)
 
     random_profile_picture = random.choice(profile_pictures)
-    random_pp_index = profile_pictures.index(random_profile_picture)
+    random_profile_picture_index = profile_pictures.index(random_profile_picture)
 
-    return random_profile_picture, random_pp_index
+    return random_profile_picture, random_profile_picture_index
 
 
 def generate_random_string(length: int, with_punctuation: bool = True,
@@ -323,7 +326,8 @@ def shorten_ipv6(ip_address: str) -> str:
         return ip_address
 
 
-UNWANTED_IPS = ["127.0.0.1", "192.168.0.1", "10.0.0.1", "192.0.2.1", "198.51.100.1", "203.0.113.1"]
+UNWANTED_IPS = ["127.0.0.1", "192.168.0.1", "10.0.0.1", "10.2.0.2",
+                "192.0.2.1", "198.51.100.1", "203.0.113.1"]
 IPV4_PATTERN = r'^(\d{1,3}\.){3}\d{1,3}$'
 IPV6_PATTERN = (
     r'^('
@@ -449,7 +453,7 @@ def get_ip_info(ip_address: str) -> dict:
     :param ip_address: The client IP
     """
 
-    ip_api_cache = JSON.load(IP_API_CACHE_PATH)
+    ip_api_cache = JSON.load(IP_API_CACHE_PATH, {})
 
     for hashed_ip, crypted_data in ip_api_cache.items():
         comparison = Hashing().compare(ip_address, hashed_ip)

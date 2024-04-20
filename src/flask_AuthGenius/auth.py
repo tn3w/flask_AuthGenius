@@ -166,7 +166,6 @@ class UserSystem(dict):
                             if return_id:
                                 user['hid'] = hashed_user_id
 
-        print(user, 2)
         if None in [password, user]:
             return user
 
@@ -193,7 +192,6 @@ class UserSystem(dict):
             decrypted_data[key] = value
 
         user['data'] = decrypted_data
-        print(user, 3)
         return user
 
     def does_have_2fa(self, user_id: str) -> None:
@@ -405,8 +403,6 @@ class UserSystem(dict):
             hashed_user_id, user_data = self[hashed_user_id]
             if None in [hashed_user_id, user_data]:
                 return None, None
-
-            print(f'{user_data=}')
 
             user_sessions: dict = user_data.get('sessions', {})
 

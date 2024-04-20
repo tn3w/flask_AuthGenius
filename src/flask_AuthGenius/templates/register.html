@@ -2,437 +2,560 @@
 <html lang="{{ language }}">
     <head>
         <meta charset="UTF-8">
+        <meta name="color-scheme" content="dark light">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Create account</title>
-        <style>{% if theme == "light" and not is_default_theme %}
+        <title>{{ website_name }}-Account: Register</title>
+        <style>
             :root {
-                --background: #ffffff;
-                --text: #333333;
-            }
-
-            #light-mode {
-                display: none;
-            }
-            {% elif theme == "dark" and not is_default_theme %}
-            :root {
-                --background: #121212;
-                --text: #ffffff;
-            }
-
-            #dark-mode {
-                display: none;
-            }
-            {% else %}
-            :root {
-                --background: #ffffff;
-                --text: #333333;
-            }
-
-            #light-mode {
-                display: none;
+                --background: #d8d6d2;
+                --background-box: #dcdad7;
+                --color: #000;
+                --subtitle-color: #666;
+                --input-border: #e9e9e9;
+                --input-background: #fff;
+                --input-hover: #ccc;
+                --box-shadow: rgba(0, 0, 0, 0.4);
+                --icon-fill: #fff;
             }
 
             @media (prefers-color-scheme: dark) {
                 :root {
                     --background: #121212;
-                    --text: #ffffff;
-                }
-    
-                input, select {
-                    background-color: #333333;
-                    color: white;
-                }
-
-                #light-mode {
-                    display: block;
-                }
-
-                #dark-mode {
-                    display: none;
+                    --background-box: #1b1d1e;
+                    --color: #fff;
+                    --color-round: #000;
+                    --subtitle-color: #ccc;
+                    --input-border: #555;
+                    --input-background: #2b2a33;
+                    --input-hover: #1b1b1b;
+                    --box-shadow: rgba(255, 255, 255, 0.01);
+                    --icon-fill: #000;
                 }
             }
-            {% endif %}
 
-            @keyframes rotate {
-                from {
-                    transform: rotate(360deg);
-                }
-                to {
-                    transform: rotate(0deg);
-                }
-            }
-    
             body {
                 font-family: Arial, sans-serif;
-                background-color: var(--background);
-                color: var(--text);
-                margin: 0;
-                padding: 0;
-                display: flex;
-                justify-content: center;
-                align-items: center;
                 height: 100vh;
-            }
-    
-            #register-container {
+                margin: 0;
                 background-color: var(--background);
-                color: var(--text);
+                color: var(--color);
+            }
+
+            #loader {
+                display: none;
+                width: 50px;
+                height: 40px;
+                justify-content: space-between;
+                align-items: center;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                z-index: 2;
+            }
+
+            .stripe {
+                width: 12px;
+                height: 30px;
+                background-color: var(--color);
+                animation: stripeMovement 1.5s infinite;
+            }
+
+            .stripe:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+
+            .stripe:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+
+            @keyframes stripeMovement {
+                0% {
+                    transform: scaleY(1);
+                }
+                50% {
+                    transform: scaleY(2);
+                }
+                100% {
+                    transform: scaleY(1);
+                }
+            }
+
+            #contentBox {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                z-index: 1;
+            }
+
+            main {
+                background-color: var(--background-box);
+                max-width: 600px;
+                min-width: 400px;
                 padding: 20px;
-                border-radius: 8px;
-                width: 800px;
-                text-align: center;
-            }
-    
-            h1 {
-                text-align: center;
-                margin-bottom: 0;
-            }
-    
-            .logo {
-                display: inline-block;
-                vertical-align: middle;
-                width: 40px;
-            }
-
-            label {
-                font-size: 14px;
-                display: block;
+                box-shadow: 6.5px 6.5px 30px var(--box-shadow);
                 text-align: left;
+                border-radius: 8px;
             }
 
-            #passwordLabel, #passwordRepeatLabel {
+            main .logo {
                 display: flex;
+                align-items: center;
+                justify-content: left;
+                margin-bottom: 20px;
+                color: var(--color);
+                text-decoration: none;
             }
-    
-            h4 {
-                display: inline-block;
-                vertical-align: middle;
-                margin-left: 10px;
-                font-weight: lighter;
+
+            main .logo img {
+                width: 24px;
+                height: 24px;
+                margin-right: 10px;
             }
-    
-            #split-container {
+
+            main .logo h1 {
+                font-size: 0.8em;
+                margin: 0;
+            }
+
+            main .title {
+                font-size: 2em;
+                margin-bottom: 10px;
+            }
+
+            main .subtitle {
+                font-size: 0.8em;
+                margin-bottom: 20px;
+                color: var(--subtitle-color);
+            }
+
+            main #splitContainer {
                 display: flex;
                 justify-content: space-between;
                 align-items: flex-start;
                 margin-top: 20px;
             }
-    
-            .left-section {
+
+            main #splitContainer .left-section {
                 flex: 1;
                 display: none;
+                max-width: 150px;
+                margin-right: 20px;
             }
-    
-            #imagePreview {
+
+            main #imagePreview {
                 cursor: pointer;
                 text-align: center;
             }
     
-            #imagePreview img {
-                max-width: 100%;
+            main #imagePreview img {
                 border-radius: 50%;
                 margin-bottom: 10px;
-            }
-            
-            #buttonImage {
-                display: none;
-                animation: rotate 1s linear infinite;
+                width: 150px;
             }
 
-            #editUsername, #editEmail {
-                display: none;
-            }
-
-            #editUsername:hover, #editEmail:hover {
-                cursor: pointer;
-                text-decoration: underline;
-            }
-
-            #profile-picture {
-                width: 200px;
-            }
-    
-            .right-section {
+            main #splitContainer .right-section {
                 flex: 1;
-                margin-left: 20px;
             }
-    
-            form {
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }
-    
-            input, select {
+
+            main input {
+                width: 100%;
                 padding: 10px;
-                border: 1px solid #ccc;
+                margin-bottom: 10px;
+                color: var(--color);
+                background-color: var(--input-background);
+                border: 1px solid var(--input-border);
                 border-radius: 5px;
+                box-sizing: border-box;
             }
-    
-            button {
-                background-color: #4CAF50;
-                color: white;
-                padding: 10px;
-                border: none;
-                border-radius: 5px;
+
+            main .password-container {
+                position: relative;
+            }
+
+            main #passwordInput {
+                margin-bottom: 0;
+            }
+
+            main .space {
+                margin-bottom: 10px;
+            }
+
+            main #eyeCrossed, main #eyeCrossedRepeat {
+                display: none;
+            }
+
+            main .toogle-password {
+                position: absolute;
+                right: 10px;
+                transform: translateY(-50%);
                 cursor: pointer;
-                display: flex;
-                justify-content: center;
             }
 
-            footer {
-                display: flex;
-                justify-content: center;
-                align-items: center;
+            main #tooglePassword {
+                top: 56%;
             }
 
-            footer a {
-                color: var(--text);
+            main #tooglePasswordRepeat {
+                top: 46%;
+            }
+
+            main #tooglePassword, main #tooglePasswordRepeat {
+                display: none;
+            }
+
+            main .toogle-password svg {
+                fill: none;
+                color: var(--color);
+                stroke: var(--color);
+            }
+
+            main .password-criteria {
+                display: none;
+                padding-left: 10px;
+                animation: slideDown 0.3s ease-in-out;
+            }
+
+            main .password-criteria p {
+                margin-top: 0px;
+                margin-bottom: 5px;
+                font-size: 0.8em;
+                color: var(--subtitle-color);
+            }
+
+            main .password-criteria p:first-child {
+                margin-top: 7px;
+            }
+
+            main #captchaContainer {
+                display: none;
+            }
+
+            main #captchaImg {
+                margin-top: 20px;
+                border-radius: 5px 5px 0 0;
+                width: 100%;
+            }
+
+            main #captchaInput {
+                border-radius: 0 0 5px 5px;
+            }
+
+            main .checkbox {
+                display: inline-block;
+                position: relative;
+                margin: 15px 15px 0 0;
+                padding-left: 30px;
+                cursor: pointer;
+                font-size: 16px;
+                line-height: 1.5;
+            }
+
+            main .checkbox p {
+                margin: unset;
+                cursor: pointer;
+            }
+
+            main .checkbox input {
+                position: absolute;
+                opacity: 0;
+            }
+
+            main .checkmark {
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 20px;
+                width: 20px;
+                background-color: var(--input-background);
+                border: 1px solid var(--input-border);
+            }
+
+            main .checkbox:hover input ~ .checkmark {
+                background-color: var(--input-hover);
+                transition: background-color 0.3s ease;
+            }
+
+            main .checkbox input:checked ~ .checkmark {
+                background-color: #2196F3;
+                transition: background-color 0.3s ease;
+            }
+
+            main .checkmark:after {
+                content: "";
+                position: absolute;
+                display: none;
+                transition: opacity 0.3s ease;
+            }
+
+            main .checkbox input:checked ~ .checkmark:after {
+                display: block;
+            }
+
+            main .checkbox .checkmark:after {
+                left: 6px;
+                top: 2px;
+                width: 5px;
+                height: 10px;
+                border: solid var(--icon-fill);
+                border-width: 0 3px 3px 0 !important;
+                transform: rotate(45deg);
+                transition: opacity 0.3s ease;
+            }
+
+            main .checkbox-subtitle {
+                margin-top: 0px;
+                margin-left: 30px;
+                cursor: pointer;
+            }
+
+            main .checkbox-subtitle a {
+                color: var(--color);
                 text-decoration: none;
             }
 
-            footer a:hover {
+            main .checkbox-subtitle a:hover {
                 text-decoration: underline;
             }
-    
-            @media (max-width: 768px) {
-                #split-container {
+
+            main button {
+                width: 100%;
+                padding: 10px;
+                background-color: #007bff;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-top: 20px;
+            }
+
+            main .subtitle-login {
+                margin-top: 20px;
+                margin-bottom: 0;
+                text-align: center;
+            }
+
+            main .subtitle-login a {
+                color: #2196F3;
+                text-decoration: underline;
+            }
+
+            footer {
+                margin-top: 20px;
+                font-size: 0.8em;
+                text-align: center;
+                text-wrap: balance;
+            }
+
+            footer a {
+                color: var(--color);
+                text-decoration: none;
+            }
+
+            @keyframes slideDown {
+                from { transform: translateY(-20px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+
+            @media screen and (max-width: 580px) {
+                main .title {
+                    font-size: 1.4em;
+                }
+            }
+
+            @media screen and (max-width: 500px) {
+                main #splitContainer {
                     flex-direction: column;
                     justify-content: center;
                     align-items: center;
                 }
 
-                #profile-picture {
-                    width: 50px;
-                }
-                
-                .left-section,
-                .right-section {
-                    margin-left: 0;
-                    width: 400px;
+                main #imagePreview {
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
                 }
 
-                .right-section {
-                    padding-top: 20px;
+                main #imagePreview img {
+                    max-width: 50px;
                 }
 
-                form {
-                    gap: 4px;
+                main {
+                    min-width: 300px;
                 }
             }
 
-            @media (max-width: 450px) {
-                .left-section,
-                .right-section {
-                    width: 300px;
-                }
-            }
-
-            @media (max-width: 325px) {
-                .left-section,
-                .right-section {
-                    width: 200px;
+            @media screen and (max-width: 380px) {
+                main {
+                    min-width: 230px;
                 }
             }
         </style>
-        <script>
-            function selectProfilePicture() {
-                const form = document.getElementById('registerForm');
+    </head>
+    <body>
+        <div id="loader">
+            <div class="stripe"></div>
+            <div class="stripe"></div>
+            <div class="stripe"></div>
+        </div>
+        <div id="contentBox">
+            <main>
+                <a href="{{ return_url }}" class="logo">
+                    <img src="{{ website_logo }}" alt="{{ website_name }} Logo">
+                    <h1>{{ website_name }}</h1>
+                </a>
+                <h1 class="title">Create your {{ website_name }} account</h1>
+                <p id="errorMessage" class="subtitle">Your account for everything.</p>
+                <div id="splitContainer">
+                    <div id="leftSection" class="left-section">
+                        <div id="imagePreview">
+                            <img id="profilePicture" src="{{ profile_picture }}" alt="">
+                            <br><p>Change profile picture</p>
+                        </div>
+                    </div>
+                    <div class="right-section">
+                        <form id="registerForm" action="/register" method="post">
+                            <input name="name" type="text" id="nameInput"{% if 'name' in response['error_fields'] %} class="error"{% endif %} placeholder="Name"{% if name|default %} value="{{ name }}"{% endif %} required>
+                            <input name="email" type="email" id="emailInput"{% if 'name' in response['error_fields'] %} class="error"{% endif %} placeholder="E-Mail"{% if name|default %} value="{{ name }}"{% endif %} required>
+                            <div class="password-container">
+                                <input name="password" type="password" id="passwordInput"{% if 'password' in response['error_fields'] %} class="error"{% endif %} placeholder="Password"{% if password|default %} value="{{ password }}"{% endif %} required>
+                                <div class="toogle-password" id="tooglePassword">
+                                    <svg width="16px" height="16px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M22 12C22 12 19 18 12 18C5 18 2 12 2 12C2 12 5 6 12 6C19 6 22 12 22 12Z"/>
+                                        <circle cx="12" cy="12" r="3"/>
+                                        <path class="eye-crossed" id="eyeCrossed" d="M3 21L20 4" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="password-criteria" id="passwordCriteria">
+                                <p><span id="lengthCheck">-</span> At least 10 characters (16 characters recommended)</p>
+                                <p><span id="upperLowerCheck">-</span> Upper and lower case letters</p>
+                                <p><span id="numberCheck">-</span> Numbers</p>
+                                <p><span id="specialCharCheck">-</span> Special characters</p>
+                            </div>
+                            <div class="space"></div>
+                            <div class="password-container">
+                                <input name="password" type="password" id="passwordInputRepeat"{% if 'passwordrepeat' in response['error_fields'] %} class="error"{% endif %} placeholder="Repeat password"{% if password|default %} value="{{ password }}"{% endif %} required>
+                                <div class="toogle-password" id="tooglePasswordRepeat">
+                                    <svg width="16px" height="16px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M22 12C22 12 19 18 12 18C5 18 2 12 2 12C2 12 5 6 12 6C19 6 22 12 22 12Z"/>
+                                        <circle cx="12" cy="12" r="3"/>
+                                        <path class="eye-crossed" id="eyeCrossedRepeat" d="M3 21L20 4" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <div id="captchaContainer"{% if response['content']['captcha_img']|default %} style="display:unset;"{% endif %}>
+                                <img id="captchaImg" src="{% if response['content']['captcha_img']|default %}{{ response['content']['captcha_img'] }}{% endif %}" alt="Captcha">
+                                <input name="captcha_code" type="text" id="captchaInput" {% if 'captcha' in response['error_fields'] %} class="error"{% endif %} placeholder="Enter what characters you see">
+                                <input name="captcha_secret" type="hidden" id="captchaSecret" value="{% if response['content']['captcha_secret']|default %}{{ response['content']['captcha_secret'] }}{% endif %}">
+                            </div>
+                            <label class="checkbox">
+                                <input name="stay" type="checkbox" value="1" required{% if stay == '1' %} checked{% endif %}>
+                                <span class="checkmark"></span><p>Accepting of the</p>
+                                <p class="subtitle checkbox-subtitle"><a href="/terms-of-use" target="_blank">Terms of use</a> and <a href="/privacy-policy" target="_blank">privacy policy</a></p>
+                            </label>
+                            <button type="submit">Create an account now</button>
+                            <p class="subtitle subtitle-login">Already have an account? <a href="/login{{ only_args }}">Log in</a></p>
+                        </form>
+                    </div>
+                </div>
+            </main>
+            <footer>
+                <a href="/terms-of-use" target="_blank">Terms of Service</a> |
+                <a href="/privacy-policy" target="_blank">Privacy</a> |
+                <a href="#">Change Language</a> |
+                <a href="/register{{ only_args }}{{ current_url_char }}theme=dark">Dark Mode</a>
+            </footer>
+        </div>
+    </body>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const togglePassword = document.getElementById('tooglePassword');
+            const togglePasswordRepeat = document.getElementById('tooglePasswordRepeat');
+            const passwordInput = document.getElementById('passwordInput');
+            const criteriaBox = document.getElementById('passwordCriteria');
+            const leftSection = document.getElementById('leftSection');
+            const imagePreview = document.getElementById('imagePreview');
+            const registerForm = document.getElementById('registerForm');
+
+            togglePassword.style.display = 'unset';
+            togglePassword.addEventListener('click', function (){
+                const passwordInput = document.getElementById('passwordInput');
+                const eyeCrossed = document.getElementById('eyeCrossed');
+
+                if (passwordInput.getAttribute('type') == 'password') {
+                    passwordInput.setAttribute('type', 'text');
+                    eyeCrossed.style.display = 'unset';
+                } else {
+                    passwordInput.setAttribute('type', 'password');
+                    eyeCrossed.style.display = 'none';
+                }
+            });
+
+            togglePasswordRepeat.style.display = 'unset';
+            togglePasswordRepeat.addEventListener('click', function (){
+                const passwordInputRepeat = document.getElementById('passwordInputRepeat');
+                const eyeCrossedRepeat = document.getElementById('eyeCrossedRepeat');
+
+                if (passwordInputRepeat.getAttribute('type') == 'password') {
+                    passwordInputRepeat.setAttribute('type', 'text');
+                    eyeCrossedRepeat.style.display = 'unset';
+                } else {
+                    passwordInputRepeat.setAttribute('type', 'password');
+                    eyeCrossedRepeat.style.display = 'none';
+                }
+            });
+
+            passwordInput.addEventListener('focus', function (){
+                criteriaBox.style.display = 'block';
+            });
+
+            passwordInput.addEventListener('input', function (){
+                const password = passwordInput.value;
+
+                const lengthCheck = document.getElementById('lengthCheck');
+                const upperLowerCheck = document.getElementById('upperLowerCheck');
+                const numberCheck = document.getElementById('numberCheck');
+                const specialCharCheck = document.getElementById('specialCharCheck');
+
+                const hasMinLength = password.length >= 10;
+                const hasUpperCase = /[A-Z]/.test(password);
+                const hasLowerCase = /[a-z]/.test(password);
+                const hasNumber = /\d/.test(password);
+                const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+/.test(password);
+
+                lengthCheck.textContent = hasMinLength ? '✔' : '-';
+                upperLowerCheck.textContent = (hasUpperCase && hasLowerCase) ? '✔' : '-';
+                numberCheck.textContent = hasNumber ? '✔' : '-';
+                specialCharCheck.textContent = hasSpecialChar ? '✔' : '-';
+            });
+
+            leftSection.style.display = 'unset';
+            imagePreview.addEventListener('click', function (){
+                const fileInputs = registerForm.querySelectorAll('input[type="file"]');
+                fileInputs.forEach(input => {
+                    input.remove();
+                });
 
                 const fileInput = document.createElement('input');
                 fileInput.style.display = "none";
                 fileInput.type = 'file';
                 fileInput.accept = 'image/*';
-                fileInput.addEventListener('change', handleFileSelect);
+                fileInput.addEventListener('change', function (){
+                    const fileInput = event.target;
+                    const profileImage = document.getElementById('profilePicture');
 
-                form.appendChild(fileInput);
+                    const files = fileInput.files;
+                    if (files.length > 0) {
+                        profileImage.src = URL.createObjectURL(files[0]);
+                    }
+                });
+
+                registerForm.appendChild(fileInput);
 
                 fileInput.click();
-            }
-
-            function handleFileSelect(event) {
-                const fileInput = event.target;
-                const profileImage = document.getElementById('profile-picture');
-
-                const files = fileInput.files;
-                if (files.length > 0) {
-                    profileImage.src = URL.createObjectURL(files[0]);
-                }
-            }
-
-            document.addEventListener('DOMContentLoaded', function() {
-                leftSection = document.getElementById("left-section");
-                leftSection.style.display = "block";
-
-                togglePassword = document.getElementById("togglePassword");
-                passwordInput = document.getElementById("password");
-
-                togglePassword.style.display = "flex";
-
-                togglePassword.addEventListener("click", function () {
-                    passwordInput.type = (passwordInput.type === "password") ? "text" : "password";
-                });
-
-                togglePasswordRepeat = document.getElementById("togglePasswordRepeat");
-                passwordInputRepeat = document.getElementById("passwordRepeat");
-
-                togglePasswordRepeat.style.display = "flex";
-
-                togglePasswordRepeat.addEventListener("click", function () {
-                    passwordInputRepeat.type = (passwordInputRepeat.type === "password") ? "text" : "password";
-                });
-
-                registerForm = document.getElementById("registerForm");
-                registerForm.addEventListener('submit', function (event) {
-                    buttonImage = document.getElementById("buttonImage");
-                    buttonImage.style.display = "block";
-                    
-                    buttonText = document.getElementById("buttonText");
-                    buttonText.innerHTML = "Loading ...";
-                });
-
-                {% if "username" in fields and username|default %}
-                var editUsername = document.getElementById("editUsername");
-                var editUsernameText = document.getElementById("editUsernameText");
-                var editUsernameBox = document.getElementById("editUsernameBox");
-                
-                editUsername.style.display = "block";
-                editUsername.addEventListener('click', function () {
-                    var label = document.createElement('label');
-                    label.textContent = "Username:";
-                    label.setAttribute('for', 'username');
-
-                    var input = document.createElement('input');
-                    input.type = "text";
-                    var username = editUsernameText.textContent.trim();
-                    input.value = username;
-                    input.name = "username";
-                    input.id = "username";
-                    input.placeholder = "@licia_t3";
-                    input.required = true;
-
-                    registerForm.insertBefore(label, registerForm.firstChild);
-                    registerForm.insertBefore(input, registerForm.firstChild);
-
-                    editUsernameBox.remove();
-                });
-                {% endif %}
-                {% if "email" in fields and email|default %}
-                var editEmail = document.getElementById("editEmail");
-                var editEmailText = document.getElementById("editEmailText");
-                var editEmailBox = document.getElementById("editEmailBox");
-                
-                editEmail.style.display = "block";
-                editEmail.addEventListener('click', function () {
-                    var label = document.createElement('label');
-                    label.textContent = "Email:";
-                    label.setAttribute('for', 'email');
-
-                    var input = document.createElement('input');
-                    input.type = "email";
-                    var email = editEmailText.textContent.trim();
-                    input.value = email;
-                    input.name = "email";
-                    input.id = "email";
-                    input.placeholder = "email@example.com";
-                    input.required = true;
-
-                    registerForm.insertBefore(label, registerForm.firstChild);
-                    registerForm.insertBefore(input, registerForm.firstChild);
-
-                    editEmailBox.remove();
-                });
-                {% endif %}
             });
-        </script>
-    </head>
-    <body>
-        <div id="register-container">
-            <h1>Create account</h1>
-            <img src="{{ company_logo }}" alt="{{ company_name }} Logo" class="logo"><h4>{{ company_name }}</h4>
-            <div id="split-container">
-                <div class="left-section" id="left-section">
-                    <div id="imagePreview" onclick="selectProfilePicture()">
-                        <img id="profile-picture" src="{{ profile_picture }}" alt="">
-                        <span><br>Click to change</span>
-                    </div>
-                </div>
-                <div class="right-section">
-                    <form id="registerForm" method="post" action="">
-                        {% if "username" in fields %}
-                            {% if username|default %}
-                            <span id="editUsernameBox">
-                                <p>Selected username: <span id="editUsernameText">{{ username }}</span>&nbsp;<span id="editUsername">Edit</span></p>
-                                <input type="hidden" name="username" value="{{ username }}">
-                            </span>
-                            {% else %}
-                            <label for="username">Username:</label>
-                            <input type="text" id="username" name="username"{% if "username" in required_fields %} required{% endif %}>
-                            {% endif %}
-                        {% endif %}
-                        {% if "email" in fields %}
-                            {% if email|default %}
-                            <span id="editEmailBox">
-                                <p>Selected email: <span id="editEmailText">{{ email }}</span>&nbsp;<span id="editEmail">Edit</span></p>
-                                <input type="hidden" name="email" value="{{ email }}">
-                            </span>
-                            {% else %}
-                            <label for="email">Email:</label>
-                            <input type="email" id="email" name="email"{% if "email" in required_fields %} required{% endif %}>
-                            {% endif %}
-                        {% endif %}
-                        <label id="passwordLabel" for="password">Password:&nbsp;<span id="togglePassword" style="display: none;">👁️</span></label>
-                        <input type="password" id="password" name="password" placeholder="********" required>
-                        <label id="passwordRepeatLabel" for="passwordRepeat">Repeat Password:&nbsp;<span id="togglePasswordRepeat" style="display: none;">👁️</span></label>
-                        <input type="password" id="passwordRepeat" name="passwordRepeat" placeholder="********" required>
-                        {% if "full_name" in fields %}
-                            <label for="fullName">Full Name:</label>
-                            <input type="text" id="fullName" name="fullName"{% if "full_name" in required_fields %} required{% endif %}>
-                        {% elif %}
-                        {% if "display_name" in fields %}
-                            <label for="displayName">Display Name:</label>
-                            <input type="text" id="displayName" name="displayName"{% if "display_name" in required_fields %} required{% endif %}>
-                        {% elif %}
-                        {% if "birthdate" in fields %}
-                            <label for="birthdate">Birthdate:</label>
-                            <input type="date" id="birthdate" name="birthdate"{% if "birthdate" in required_fields %} required{% endif %}>
-                        {% elif %}
-                        {% if "gender" in fields %}
-                            <label for="gender">Gender:</label>
-                            <select id="gender" name="gender">
-                                <option value="m">Male</option>
-                                <option value="f">Female</option>
-                                <option value="o">Other</option>
-                                {% if not "gender" in required_fields %}
-                                <option value="p">Prefer not to say</option>
-                                {% endif %}
-                            </select>
-                        {% elif %}
-                        {% if "country" in fields %}
-                            <label for="country">Country:</label>
-                            <select id="country" name="country">
-                                {% for country in countrys %}
-                                <option value="{{ country["code"] }}">{{ country["name"] }}</option>
-                                {% endfor %}
-                            </select>
-                        {% elif %}
-                        <input type="hidden" name="profile_picture_index" value="{{ profile_picture_index }}">
-                        <input type="hidden" name="ag_register" value="1">
-                        <button type="submit" form="registerForm">
-                            <img id="buttonImage" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAOxAAADsQBlSsOGwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADkSURBVDiNtZJBSgNBFERfJcFoFFwIbsSFIEF0JejKO7jWY+ktPJEgEheeQNAoQnxuOjgZkxlnYUEzdP1f1fW7Bxqg3qo3TT2DpiIwbqnTa2uoQz1RL/5q8FnWXHwKXAG7cy4tp40Bkjyox8A1cA/cJZl1jX6mXqr9TsI2pDhWR5klcUWKbeCcn7t76fwK/w91Q11bwu+o+3W+V2vaBLaAftkP1WEpj4Aj9bCqGVTEo9I0TfJe6L3ynSR5LmYH6leSyYJBSfOWZFrhFn60JI/qDFj/lSDJa32+ZUjytHSEFfhoM/wGWj1hK6xe71YAAAAASUVORK5CYII=">
-                            &nbsp;<span id="buttonText">Register</span>
-                        </button>
-                    </form>
-                    <br>
-                    <footer>
-                        <a href="?ag_login=1">Login</a>&nbsp;-&nbsp;
-                        <a href="?change_language=1">Change Language</a>&nbsp;-&nbsp;
-                        <span id="dark-mode"><a href="?theme=dark">Dark Mode</a>&nbsp;-&nbsp;</span>
-                        <span id="light-mode"><a href="?theme=light">Light Mode</a>&nbsp;-&nbsp;</span>
-                        <a href="https://github.com/tn3w/flask_AuthGenius/blob/master/Privacy.md" target="_blank">🔐 Privacy</a>
-                    </footer>
-                </div>
-            </div>
-        </div>
-    </body>
+        });
+    </script>
 </html>
