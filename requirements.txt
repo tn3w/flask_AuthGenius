@@ -12,3 +12,4 @@ googletrans==3.1.0a0
 captcha
 pyotp
 qrcode
+werkzeug>=3.0.3 # not directly required, pinned by Snyk to avoid a vulnerability
