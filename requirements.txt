@@ -13,3 +13,4 @@ captcha
 pyotp
 qrcode
 werkzeug>=3.0.3 # not directly required, pinned by Snyk to avoid a vulnerability
+httpx>=0.23.0 # not directly required, pinned by Snyk to avoid a vulnerability
